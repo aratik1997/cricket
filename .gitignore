@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors/IDEs
+.vscode/
+.idea/
+*.swp
+
+# PHP / Composer (not currently used, but harmless to ignore)
+/vendor/
+composer.lock
+
+# Logs
+*.log
+
+# Local environment overrides
+.env
+.env.local

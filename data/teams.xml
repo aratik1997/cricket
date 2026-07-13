@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<teams>
+    <team tier="top10">
+        <name>India</name>
+        <short_code>IND</short_code>
+        <players>
+            <player>Rohit Sharma</player>
+            <player>Shubman Gill</player>
+            <player>Virat Kohli</player>
+            <player>Suryakumar Yadav</player>
+            <player>Shreyas Iyer</player>
+            <player>KL Rahul</player>
+            <player>Hardik Pandya</player>
+            <player>Ravindra Jadeja</player>
+            <player>Axar Patel</player>
+            <player>Jasprit Bumrah</player>
+            <player>Mohammed Shami</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>Australia</name>
+        <short_code>AUS</short_code>
+        <players>
+            <player>Travis Head</player>
+            <player>David Warner</player>
+            <player>Mitchell Marsh</player>
+            <player>Steve Smith</player>
+            <player>Marnus Labuschagne</player>
+            <player>Glenn Maxwell</player>
+            <player>Alex Carey</player>
+            <player>Pat Cummins</player>
+            <player>Mitchell Starc</player>
+            <player>Josh Hazlewood</player>
+            <player>Adam Zampa</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>England</name>
+        <short_code>ENG</short_code>
+        <players>
+            <player>Jos Buttler</player>
+            <player>Jonny Bairstow</player>
+            <player>Dawid Malan</player>
+            <player>Joe Root</player>
+            <player>Harry Brook</player>
+            <player>Ben Stokes</player>
+            <player>Moeen Ali</player>
+            <player>Liam Livingstone</player>
+            <player>Chris Woakes</player>
+            <player>Adil Rashid</player>
+            <player>Mark Wood</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>New Zealand</name>
+        <short_code>NZ</short_code>
+        <players>
+            <player>Devon Conway</player>
+            <player>Will Young</player>
+            <player>Kane Williamson</player>
+            <player>Daryl Mitchell</player>
+            <player>Tom Latham</player>
+            <player>Glenn Phillips</player>
+            <player>James Neesham</player>
+            <player>Mitchell Santner</player>
+            <player>Matt Henry</player>
+            <player>Trent Boult</player>
+            <player>Lockie Ferguson</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>Pakistan</name>
+        <short_code>PAK</short_code>
+        <players>
+            <player>Fakhar Zaman</player>
+            <player>Abdullah Shafique</player>
+            <player>Babar Azam</player>
+            <player>Mohammad Rizwan</player>
+            <player>Saud Shakeel</player>
+            <player>Iftikhar Ahmed</player>
+            <player>Shadab Khan</player>
+            <player>Mohammad Nawaz</player>
+            <player>Shaheen Afridi</player>
+            <player>Haris Rauf</player>
+            <player>Naseem Shah</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>South Africa</name>
+        <short_code>SA</short_code>
+        <players>
+            <player>Quinton de Kock</player>
+            <player>Temba Bavuma</player>
+            <player>Rassie van der Dussen</player>
+            <player>Aiden Markram</player>
+            <player>Heinrich Klaasen</player>
+            <player>David Miller</player>
+            <player>Marco Jansen</player>
+            <player>Keshav Maharaj</player>
+            <player>Kagiso Rabada</player>
+            <player>Lungi Ngidi</player>
+            <player>Tabraiz Shamsi</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>Sri Lanka</name>
+        <short_code>SL</short_code>
+        <players>
+            <player>Pathum Nissanka</player>
+            <player>Kusal Perera</player>
+            <player>Kusal Mendis</player>
+            <player>Sadeera Samarawickrama</player>
+            <player>Charith Asalanka</player>
+            <player>Dhananjaya de Silva</player>
+            <player>Dasun Shanaka</player>
+            <player>Wanindu Hasaranga</player>
+            <player>Maheesh Theekshana</player>
+            <player>Dilshan Madushanka</player>
+            <player>Lahiru Kumara</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>West Indies</name>
+        <short_code>WI</short_code>
+        <players>
+            <player>Brandon King</player>
+            <player>Johnson Charles</player>
+            <player>Shai Hope</player>
+            <player>Nicholas Pooran</player>
+            <player>Shimron Hetmyer</player>
+            <player>Rovman Powell</player>
+            <player>Jason Holder</player>
+            <player>Akeal Hosein</player>
+            <player>Alzarri Joseph</player>
+            <player>Shannon Gabriel</player>
+            <player>Gudakesh Motie</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>Bangladesh</name>
+        <short_code>BAN</short_code>
+        <players>
+            <player>Tanzid Hasan</player>
+            <player>Litton Das</player>
+            <player>Najmul Hossain Shanto</player>
+            <player>Shakib Al Hasan</player>
+            <player>Towhid Hridoy</player>
+            <player>Mahmudullah</player>
+            <player>Mushfiqur Rahim</player>
+            <player>Mehidy Hasan Miraz</player>
+            <player>Taskin Ahmed</player>
+            <player>Shoriful Islam</player>
+            <player>Mustafizur Rahman</player>
+        </players>
+    </team>
+    <team tier="top10">
+        <name>Afghanistan</name>
+        <short_code>AFG</short_code>
+        <players>
+            <player>Rahmanullah Gurbaz</player>
+            <player>Ibrahim Zadran</player>
+            <player>Riaz Hassan</player>
+            <player>Rahmat Shah</player>
+            <player>Hashmatullah Shahidi</player>
+            <player>Azmatullah Omarzai</player>
+            <player>Mohammad Nabi</player>
+            <player>Rashid Khan</player>
+            <player>Noor Ahmad</player>
+            <player>Naveen-ul-Haq</player>
+            <player>Fazalhaq Farooqi</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>Zimbabwe</name>
+        <short_code>ZIM</short_code>
+        <players>
+            <player>Tadiwanashe Marumani</player>
+            <player>Joylord Gumbie</player>
+            <player>Craig Ervine</player>
+            <player>Sikandar Raza</player>
+            <player>Sean Williams</player>
+            <player>Dion Myers</player>
+            <player>Ryan Burl</player>
+            <player>Wessly Madhevere</player>
+            <player>Blessing Muzarabani</player>
+            <player>Richard Ngarava</player>
+            <player>Tendai Chatara</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>Ireland</name>
+        <short_code>IRE</short_code>
+        <players>
+            <player>Paul Stirling</player>
+            <player>Stephen Doheny</player>
+            <player>Andrew Balbirnie</player>
+            <player>Harry Tector</player>
+            <player>Lorcan Tucker</player>
+            <player>Curtis Campher</player>
+            <player>George Dockrell</player>
+            <player>Gareth Delany</player>
+            <player>Mark Adair</player>
+            <player>Craig Young</player>
+            <player>Josh Little</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>Netherlands</name>
+        <short_code>NED</short_code>
+        <players>
+            <player>Max ODowd</player>
+            <player>Wesley Barresi</player>
+            <player>Vikramjit Singh</player>
+            <player>Bas de Leede</player>
+            <player>Scott Edwards</player>
+            <player>Sybrand Engelbrecht</player>
+            <player>Teja Nidamanuru</player>
+            <player>Logan van Beek</player>
+            <player>Roelof van der Merwe</player>
+            <player>Aryan Dutt</player>
+            <player>Paul van Meekeren</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>United Arab Emirates</name>
+        <short_code>UAE</short_code>
+        <players>
+            <player>Muhammad Waseem</player>
+            <player>Alishan Sharafu</player>
+            <player>Vriitya Aravind</player>
+            <player>Aryansh Sharma</player>
+            <player>Rahul Chopra</player>
+            <player>Basil Hameed</player>
+            <player>Muhammad Jawadullah</player>
+            <player>Aayan Afzal Khan</player>
+            <player>Zahoor Khan</player>
+            <player>Junaid Siddique</player>
+            <player>Karthik Meiyappan</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>Nepal</name>
+        <short_code>NEP</short_code>
+        <players>
+            <player>Kushal Bhurtel</player>
+            <player>Asif Sheikh</player>
+            <player>Kushal Malla</player>
+            <player>Rohit Paudel</player>
+            <player>Aasif Sheikh</player>
+            <player>Dipendra Singh Airee</player>
+            <player>Gulsan Jha</player>
+            <player>Sompal Kami</player>
+            <player>Karan KC</player>
+            <player>Sandeep Lamichhane</player>
+            <player>Lalit Rajbanshi</player>
+        </players>
+    </team>
+    <team tier="other">
+        <name>Scotland</name>
+        <short_code>SCO</short_code>
+        <players>
+            <player>George Munsey</player>
+            <player>Michael Jones</player>
+            <player>Brandon McMullen</player>
+            <player>Matthew Cross</player>
+            <player>Richie Berrington</player>
+            <player>Michael Leask</player>
+            <player>Chris Greaves</player>
+            <player>Mark Watt</player>
+            <player>Brad Wheal</player>
+            <player>Safyaan Sharif</player>
+            <player>Brad Currie</player>
+        </players>
+    </team>
+</teams>
