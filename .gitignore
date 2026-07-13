@@ -17,3 +17,6 @@ composer.lock
 # Local environment overrides
 .env
 .env.local
+
+# Local config with real DB credentials (copy from config.example.php)
+config/config.php

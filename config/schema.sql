@@ -1,6 +1,6 @@
 -- Cricket Game database schema
-CREATE DATABASE IF NOT EXISTS cricket_game CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE cricket_game;
+-- Database creation/selection is handled dynamically by config/db.php — this
+-- file only defines tables, so it works against whatever database db.php connected to.
 
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,

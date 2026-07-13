@@ -1,9 +1,21 @@
 <?php
-// PDO connection for the Cricket Game. Default XAMPP MySQL/MariaDB credentials.
-$DB_HOST = 'localhost';
-$DB_NAME = 'cricket_game';
-$DB_USER = 'root';
-$DB_PASS = '';
+// PDO connection for the Cricket Game.
+// LOCAL (XAMPP) defaults are used automatically. On shared hosting, copy
+// config.example.php to config.php in this folder and fill in your real
+// database credentials — config.php is gitignored so they never get committed.
+$configFile = __DIR__ . '/config.php';
+if (file_exists($configFile)) {
+    $cfg = require $configFile;
+    $DB_HOST = $cfg['db_host'];
+    $DB_NAME = $cfg['db_name'];
+    $DB_USER = $cfg['db_user'];
+    $DB_PASS = $cfg['db_pass'];
+} else {
+    $DB_HOST = 'localhost';
+    $DB_NAME = 'cricket_game';
+    $DB_USER = 'root';
+    $DB_PASS = '';
+}
 
 try {
     $pdo = new PDO(
@@ -12,7 +24,11 @@ try {
         $DB_PASS,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    try {
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (PDOException $e) {
+        // Shared hosting DB users often can't CREATE DATABASE — fine as long as it already exists.
+    }
     $pdo->exec("USE `{$DB_NAME}`");
 
     // Bootstrap schema automatically on first run.
