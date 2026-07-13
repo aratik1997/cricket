@@ -9,11 +9,17 @@ if (!isset($pageTitle)) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= htmlspecialchars($pageTitle) ?> - Cricket Game</title>
+<link rel="icon" type="image/svg+xml" href="/cricket/assets/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/cricket/assets/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/cricket/assets/img/favicon-16.png">
+<link rel="apple-touch-icon" href="/cricket/assets/img/apple-touch-icon.png">
+<link rel="manifest" href="/cricket/assets/img/site.webmanifest">
+<link rel="shortcut icon" href="/cricket/favicon.ico">
 <link rel="stylesheet" href="/cricket/assets/css/style.css">
 </head>
 <body>
 <header class="site-header">
-    <a class="brand" href="/cricket/index.php">🏏 Cricket Game</a>
+    <a class="brand" href="/cricket/index.php"><img src="/cricket/assets/img/logo.svg" alt="Cricket Game" class="brand-logo"> Cricket Game</a>
     <?php if (is_logged_in()): ?>
     <nav class="site-nav">
         <span class="hello">Hi, <?= htmlspecialchars(current_username()) ?></span>
