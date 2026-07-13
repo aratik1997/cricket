@@ -52,6 +52,12 @@ try {
         $pdo->exec("ALTER TABLE matches ADD COLUMN toss_flip_result ENUM('heads','tails') NULL AFTER toss_call");
         $pdo->exec("ALTER TABLE matches MODIFY status ENUM('waiting','toss_call','toss','in_progress','completed') NOT NULL DEFAULT 'waiting'");
     }
+
+    // Accounts no longer use passwords — just a chosen name.
+    $passwordCol = $pdo->query("SHOW COLUMNS FROM users LIKE 'password_hash'")->fetch();
+    if ($passwordCol && strtoupper($passwordCol['Null']) === 'NO') {
+        $pdo->exec("ALTER TABLE users MODIFY password_hash VARCHAR(255) NULL");
+    }
 } catch (PDOException $e) {
     die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
 }

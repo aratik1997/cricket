@@ -9,12 +9,12 @@ if (!isset($pageTitle)) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= htmlspecialchars($pageTitle) ?> - Cricket Game</title>
-<link rel="icon" type="image/svg+xml" href="/cricket/assets/img/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/cricket/assets/img/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/cricket/assets/img/favicon-16.png">
-<link rel="apple-touch-icon" href="/cricket/assets/img/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/cricket/assets/img/favicon.svg?v=2">
+<link rel="icon" type="image/png" sizes="32x32" href="/cricket/assets/img/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="/cricket/assets/img/favicon-16.png?v=2">
+<link rel="apple-touch-icon" href="/cricket/assets/img/apple-touch-icon.png?v=2">
 <link rel="manifest" href="/cricket/assets/img/site.webmanifest">
-<link rel="shortcut icon" href="/cricket/favicon.ico">
+<link rel="shortcut icon" href="/cricket/favicon.ico?v=2">
 <link rel="stylesheet" href="/cricket/assets/css/style.css">
 </head>
 <body>

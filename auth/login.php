@@ -4,35 +4,38 @@ require_once __DIR__ . '/../includes/auth.php';
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
 
-    $stmt = $pdo->prepare('SELECT id, username, password_hash FROM users WHERE username = ?');
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
+    if (!preg_match('/^[A-Za-z0-9_ ]{2,20}$/', $username)) {
+        $error = 'Name must be 2-20 characters (letters, numbers, spaces, underscore only).';
+    } else {
+        $stmt = $pdo->prepare('SELECT id, username FROM users WHERE username = ?');
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
 
-    if ($user && password_verify($password, $user['password_hash'])) {
+        if (!$user) {
+            $stmt = $pdo->prepare('INSERT INTO users (username) VALUES (?)');
+            $stmt->execute([$username]);
+            $user = ['id' => $pdo->lastInsertId(), 'username' => $username];
+        }
+
         login_user((int)$user['id'], $user['username']);
         header('Location: /cricket/index.php');
         exit;
     }
-    $error = 'Invalid username or password.';
 }
 
-$pageTitle = 'Login';
+$pageTitle = 'Enter Name';
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="auth-card">
-    <h1>Login</h1>
+    <h1>Welcome</h1>
+    <p class="muted">Enter a name to start playing.</p>
     <?php if ($error): ?><div class="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <form method="post" class="stack-form">
-        <label>Username
-            <input type="text" name="username" required maxlength="20" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>">
+        <label>Your name
+            <input type="text" name="username" required maxlength="20" autofocus value="<?= htmlspecialchars($_POST['username'] ?? '') ?>">
         </label>
-        <label>Password
-            <input type="password" name="password" required>
-        </label>
-        <button type="submit" class="btn btn-primary">Login</button>
+        <button type="submit" class="btn btn-primary">Play</button>
     </form>
-    <p>New here? <a href="/cricket/auth/register.php">Create an account</a>.</p>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>
