@@ -58,6 +58,20 @@ try {
     if ($passwordCol && strtoupper($passwordCol['Null']) === 'NO') {
         $pdo->exec("ALTER TABLE users MODIFY password_hash VARCHAR(255) NULL");
     }
+
+    // Per-player batting/bowling tracking (striker, non-striker, current bowler + who faced/bowled each ball).
+    $hasStriker = $pdo->query("SHOW COLUMNS FROM innings LIKE 'striker_id'")->fetch();
+    if (!$hasStriker) {
+        $pdo->exec("ALTER TABLE innings ADD COLUMN striker_id INT NULL");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN non_striker_id INT NULL");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN bowler_id INT NULL");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN next_bat_order TINYINT NOT NULL DEFAULT 3");
+    }
+    $hasBallBatsman = $pdo->query("SHOW COLUMNS FROM balls LIKE 'batsman_id'")->fetch();
+    if (!$hasBallBatsman) {
+        $pdo->exec("ALTER TABLE balls ADD COLUMN batsman_id INT NULL");
+        $pdo->exec("ALTER TABLE balls ADD COLUMN bowler_id INT NULL");
+    }
 } catch (PDOException $e) {
     die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
 }

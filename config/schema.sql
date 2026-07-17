@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS innings (
     balls_bowled INT NOT NULL DEFAULT 0,
     target INT NULL,
     completed TINYINT(1) NOT NULL DEFAULT 0,
+    striker_id INT NULL,
+    non_striker_id INT NULL,
+    bowler_id INT NULL,
+    next_bat_order TINYINT NOT NULL DEFAULT 3,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -76,6 +80,8 @@ CREATE TABLE IF NOT EXISTS balls (
     stopwatch_value TINYINT NOT NULL,
     outcome ENUM('run','dot','wicket') NOT NULL,
     runs_scored TINYINT NOT NULL DEFAULT 0,
+    batsman_id INT NULL,
+    bowler_id INT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (innings_id) REFERENCES innings(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

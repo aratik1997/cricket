@@ -13,6 +13,20 @@ function resolve_ball(int $stopwatchValue): array {
     return ['outcome' => 'dot', 'runs' => 0];
 }
 
+/** Whether $uid is the person allowed to play the next ball of the currently batting team. */
+function can_play_ball(array $match, array $innings, int $uid): bool {
+    $battingIsTeam1 = (int)$innings['batting_team_id'] === (int)$match['team1_id'];
+    if ($match['mode'] === 'local') {
+        return true; // same device either way
+    }
+    if ($match['mode'] === 'online') {
+        $authorizedUser = $battingIsTeam1 ? (int)$match['user1_id'] : (int)$match['user2_id'];
+        return $authorizedUser === $uid;
+    }
+    // single, worldcup: the human always plays team1; the computer's innings is auto-simulated.
+    return $battingIsTeam1;
+}
+
 function get_all_teams(PDO $pdo): array {
     return $pdo->query('SELECT * FROM teams ORDER BY tier = "top10" DESC, name ASC')->fetchAll();
 }
@@ -107,6 +121,20 @@ function toss_summary_text(array $match): string {
     return "{$callerCode} called {$call}, the coin landed {$flip} \xE2\x80\x94 {$winnerCode} won the toss and chose to {$match['toss_decision']}.";
 }
 
+/** Opens the batting with the top two in the order and hands the ball to the bowling team's first bowler. */
+function init_innings_players(PDO $pdo, int $inningsId, int $battingTeamId, int $bowlingTeamId): void {
+    $openers = $pdo->prepare('SELECT id FROM players WHERE team_id = ? ORDER BY batting_order ASC LIMIT 2');
+    $openers->execute([$battingTeamId]);
+    $openerIds = $openers->fetchAll(PDO::FETCH_COLUMN);
+
+    $bowlerStmt = $pdo->prepare('SELECT id FROM players WHERE team_id = ? ORDER BY batting_order ASC LIMIT 1');
+    $bowlerStmt->execute([$bowlingTeamId]);
+    $bowlerId = $bowlerStmt->fetchColumn();
+
+    $pdo->prepare('UPDATE innings SET striker_id = ?, non_striker_id = ?, bowler_id = ?, next_bat_order = 3 WHERE id = ?')
+        ->execute([$openerIds[0] ?? null, $openerIds[1] ?? null, $bowlerId ?: null, $inningsId]);
+}
+
 /** Creates the first innings once the toss call (bat/bowl) is known, and starts the match. */
 function start_innings1(PDO $pdo, int $matchId, int $battingTeamId): void {
     $match = get_match($pdo, $matchId);
@@ -118,6 +146,7 @@ function start_innings1(PDO $pdo, int $matchId, int $battingTeamId): void {
     $innStmt = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id)
         VALUES (?, 1, ?, ?)');
     $innStmt->execute([$matchId, $battingTeamId, $bowlingTeamId]);
+    init_innings_players($pdo, (int)$pdo->lastInsertId(), $battingTeamId, $bowlingTeamId);
 }
 
 /** Applies the toss winner's bat/bowl call and kicks off the first innings. */
@@ -190,6 +219,174 @@ function get_balls_for_innings(PDO $pdo, int $inningsId): array {
 }
 
 /**
+ * Builds the live batting/bowling scorecard for one innings: the full XI on both sides (including
+ * those yet to bat/bowl), their runs/balls/wickets, the current striker/non-striker/bowler, and run rates.
+ */
+function get_innings_scorecard(PDO $pdo, int $inningsId): ?array {
+    $stmt = $pdo->prepare('SELECT i.*, tb.name AS batting_team_name, tb.short_code AS batting_team_code,
+            tw.name AS bowling_team_name, tw.short_code AS bowling_team_code
+        FROM innings i
+        JOIN teams tb ON tb.id = i.batting_team_id
+        JOIN teams tw ON tw.id = i.bowling_team_id
+        WHERE i.id = ?');
+    $stmt->execute([$inningsId]);
+    $innings = $stmt->fetch();
+    if (!$innings) {
+        return null;
+    }
+
+    $strikerId = (int)($innings['striker_id'] ?? 0);
+    $nonStrikerId = (int)($innings['non_striker_id'] ?? 0);
+    $bowlerId = (int)($innings['bowler_id'] ?? 0);
+
+    $battingStmt = $pdo->prepare('SELECT p.id AS player_id, p.name,
+            COALESCE(SUM(b.runs_scored), 0) AS runs,
+            COUNT(b.id) AS balls,
+            MAX(CASE WHEN b.outcome = "wicket" THEN 1 ELSE 0 END) AS is_out
+        FROM players p
+        LEFT JOIN balls b ON b.batsman_id = p.id AND b.innings_id = ?
+        WHERE p.team_id = ?
+        GROUP BY p.id, p.name, p.batting_order
+        ORDER BY p.batting_order ASC');
+    $battingStmt->execute([$inningsId, (int)$innings['batting_team_id']]);
+    $batting = [];
+    foreach ($battingStmt->fetchAll() as $row) {
+        $playerId = (int)$row['player_id'];
+        $balls = (int)$row['balls'];
+        $batting[] = [
+            'player_id' => $playerId,
+            'name' => $row['name'],
+            'runs' => (int)$row['runs'],
+            'balls' => $balls,
+            'is_out' => (bool)$row['is_out'],
+            'strike_rate' => $balls > 0 ? round($row['runs'] / $balls * 100, 1) : 0.0,
+            'is_striker' => $playerId === $strikerId,
+            'is_non_striker' => $playerId === $nonStrikerId,
+        ];
+    }
+
+    $bowlingStmt = $pdo->prepare('SELECT p.id AS player_id, p.name,
+            COALESCE(SUM(b.runs_scored), 0) AS runs,
+            COUNT(b.id) AS balls,
+            COALESCE(SUM(CASE WHEN b.outcome = "wicket" THEN 1 ELSE 0 END), 0) AS wickets
+        FROM players p
+        LEFT JOIN balls b ON b.bowler_id = p.id AND b.innings_id = ?
+        WHERE p.team_id = ?
+        GROUP BY p.id, p.name, p.batting_order
+        ORDER BY p.batting_order ASC');
+    $bowlingStmt->execute([$inningsId, (int)$innings['bowling_team_id']]);
+    $bowling = [];
+    foreach ($bowlingStmt->fetchAll() as $row) {
+        $playerId = (int)$row['player_id'];
+        $balls = (int)$row['balls'];
+        $bowling[] = [
+            'player_id' => $playerId,
+            'name' => $row['name'],
+            'runs' => (int)$row['runs'],
+            'balls' => $balls,
+            'wickets' => (int)$row['wickets'],
+            'overs_display' => intdiv($balls, 6) . '.' . ($balls % 6),
+            'economy' => $balls > 0 ? round($row['runs'] / ($balls / 6), 2) : 0.0,
+            'is_current' => $playerId === $bowlerId,
+        ];
+    }
+
+    $ballsBowled = (int)$innings['balls_bowled'];
+    $runs = (int)$innings['runs'];
+    $crr = $ballsBowled > 0 ? round($runs / ($ballsBowled / 6), 2) : 0.0;
+
+    $required = null;
+    if ((int)$innings['innings_no'] === 2 && $innings['target'] !== null) {
+        $matchStmt = $pdo->prepare('SELECT overs_limit FROM matches WHERE id = ?');
+        $matchStmt->execute([(int)$innings['match_id']]);
+        $maxBalls = (int)$matchStmt->fetchColumn() * 6;
+        $runsNeeded = max((int)$innings['target'] - $runs, 0);
+        $ballsLeft = max($maxBalls - $ballsBowled, 0);
+        $required = [
+            'runs_needed' => $runsNeeded,
+            'balls_left' => $ballsLeft,
+            'rrr' => $ballsLeft > 0 ? round($runsNeeded / ($ballsLeft / 6), 2) : 0.0,
+        ];
+    }
+
+    return [
+        'innings_id' => (int)$innings['id'],
+        'innings_no' => (int)$innings['innings_no'],
+        'batting_team_name' => $innings['batting_team_name'],
+        'batting_team_code' => $innings['batting_team_code'],
+        'bowling_team_name' => $innings['bowling_team_name'],
+        'bowling_team_code' => $innings['bowling_team_code'],
+        'runs' => $runs,
+        'wickets' => (int)$innings['wickets'],
+        'balls_bowled' => $ballsBowled,
+        'target' => $innings['target'] !== null ? (int)$innings['target'] : null,
+        'completed' => (bool)$innings['completed'],
+        'crr' => $crr,
+        'required' => $required,
+        'batting' => $batting,
+        'bowling' => $bowling,
+    ];
+}
+
+/** Every innings of a match, as live scorecards — used by the Player Stats panel and the final scorecard. */
+function get_match_scorecard(PDO $pdo, int $matchId): array {
+    $cards = [];
+    foreach (get_innings_list($pdo, $matchId) as $inn) {
+        $card = get_innings_scorecard($pdo, (int)$inn['id']);
+        if ($card) {
+            $cards[] = $card;
+        }
+    }
+    return $cards;
+}
+
+/** Renders one innings' batting + bowling scorecard as HTML for the live Player Stats panel / scorecard page. */
+function innings_scorecard_html(array $card, bool $showHeader = true): string {
+    $html = '<div class="stats-innings">';
+    if ($showHeader) {
+        $overs = intdiv($card['balls_bowled'], 6) . '.' . ($card['balls_bowled'] % 6);
+        $html .= '<h3>' . htmlspecialchars($card['batting_team_code']) . ' ' . (int)$card['runs'] . '/' . (int)$card['wickets']
+            . ' <span class="muted">(' . $overs . ' ov &middot; CRR ' . number_format($card['crr'], 2) . ')</span></h3>';
+    }
+
+    if ($card['required']) {
+        $html .= '<p class="stats-required">Need ' . (int)$card['required']['runs_needed']
+            . ' runs off ' . (int)$card['required']['balls_left'] . ' balls'
+            . ' &middot; RRR ' . number_format($card['required']['rrr'], 2) . '</p>';
+    }
+
+    $html .= '<table class="stats-table"><thead><tr><th>Batter</th><th>R</th><th>B</th><th>SR</th></tr></thead><tbody>';
+    foreach ($card['batting'] as $b) {
+        $isOnCrease = $b['is_striker'] || $b['is_non_striker'];
+        $marker = $b['is_striker'] ? ' *' : '';
+        $status = $b['is_out'] ? 'out' : ($isOnCrease ? 'not out' : 'yet to bat');
+        $rowClass = $b['is_striker'] ? ' class="stats-active"' : ($status === 'yet to bat' ? ' class="stats-pending"' : '');
+        $html .= '<tr' . $rowClass . '><td>' . htmlspecialchars($b['name']) . $marker
+            . '<span class="muted"> ' . htmlspecialchars($status) . '</span></td>'
+            . '<td>' . (int)$b['runs'] . '</td><td>' . (int)$b['balls'] . '</td>'
+            . '<td>' . number_format($b['strike_rate'], 1) . '</td></tr>';
+    }
+    $html .= '</tbody></table>';
+
+    if ($card['bowling']) {
+        $html .= '<table class="stats-table"><thead><tr><th>Bowler</th><th>O</th><th>R</th><th>W</th><th>Econ</th></tr></thead><tbody>';
+        foreach ($card['bowling'] as $bw) {
+            $hasBowled = $bw['balls'] > 0;
+            $rowClass = $bw['is_current'] ? ' class="stats-active"' : (!$hasBowled ? ' class="stats-pending"' : '');
+            $marker = $bw['is_current'] ? ' *' : '';
+            $econ = $hasBowled ? number_format($bw['economy'], 2) : '&mdash;';
+            $html .= '<tr' . $rowClass . '><td>' . htmlspecialchars($bw['name']) . $marker . '</td>'
+                . '<td>' . htmlspecialchars($bw['overs_display']) . '</td><td>' . (int)$bw['runs'] . '</td>'
+                . '<td>' . (int)$bw['wickets'] . '</td><td>' . $econ . '</td></tr>';
+        }
+        $html .= '</tbody></table>';
+    }
+
+    $html .= '</div>';
+    return $html;
+}
+
+/**
  * Records one ball against an innings, advances over/innings/match state as needed.
  * Returns ['outcome'=>..,'runs'=>..,'innings_ended'=>bool,'match_ended'=>bool,'innings'=>row,'match'=>row]
  */
@@ -206,10 +403,12 @@ function record_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
 
     $overNo = intdiv((int)$innings['balls_bowled'], 6) + 1;
     $ballNo = ((int)$innings['balls_bowled'] % 6) + 1;
+    $strikerId = $innings['striker_id'] ?: null;
+    $bowlerId = $innings['bowler_id'] ?: null;
 
-    $insert = $pdo->prepare('INSERT INTO balls (innings_id, over_no, ball_no, stopwatch_value, outcome, runs_scored)
-        VALUES (?, ?, ?, ?, ?, ?)');
-    $insert->execute([$inningsId, $overNo, $ballNo, $stopwatchValue, $result['outcome'], $result['runs']]);
+    $insert = $pdo->prepare('INSERT INTO balls (innings_id, over_no, ball_no, stopwatch_value, outcome, runs_scored, batsman_id, bowler_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    $insert->execute([$inningsId, $overNo, $ballNo, $stopwatchValue, $result['outcome'], $result['runs'], $strikerId, $bowlerId]);
 
     $newRuns = (int)$innings['runs'] + $result['runs'];
     $newWickets = (int)$innings['wickets'] + ($result['outcome'] === 'wicket' ? 1 : 0);
@@ -232,6 +431,49 @@ function record_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
         $innings['completed'] = 1;
     }
 
+    if (!$inningsEnded) {
+        $newStriker = (int)($innings['striker_id'] ?? 0);
+        $newNonStriker = (int)($innings['non_striker_id'] ?? 0);
+        $newBowler = (int)($innings['bowler_id'] ?? 0);
+        $nextBatOrder = (int)($innings['next_bat_order'] ?? 3);
+
+        if ($result['outcome'] === 'wicket') {
+            $nextBatsman = $pdo->prepare('SELECT id FROM players WHERE team_id = ? AND batting_order = ?');
+            $nextBatsman->execute([(int)$innings['batting_team_id'], $nextBatOrder]);
+            $incomingId = $nextBatsman->fetchColumn();
+            if ($incomingId) {
+                $newStriker = (int)$incomingId;
+                $nextBatOrder++;
+            }
+        } elseif ($result['runs'] % 2 === 1) {
+            [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
+        }
+
+        // Over complete: ends change (strike rotates) and the bowling side hands the ball to the next bowler.
+        if ($newBalls % 6 === 0) {
+            [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
+            $bowlingSquad = $pdo->prepare('SELECT id FROM players WHERE team_id = ? ORDER BY batting_order ASC');
+            $bowlingSquad->execute([(int)$innings['bowling_team_id']]);
+            $squadIds = $bowlingSquad->fetchAll(PDO::FETCH_COLUMN);
+            if ($squadIds) {
+                $nextOverNo = intdiv($newBalls, 6) + 1;
+                $pick = (int)$squadIds[($nextOverNo - 1) % count($squadIds)];
+                if ($pick === $newBowler && count($squadIds) > 1) {
+                    $pick = (int)$squadIds[$nextOverNo % count($squadIds)];
+                }
+                $newBowler = $pick;
+            }
+        }
+
+        $pdo->prepare('UPDATE innings SET striker_id = ?, non_striker_id = ?, bowler_id = ?, next_bat_order = ? WHERE id = ?')
+            ->execute([$newStriker ?: null, $newNonStriker ?: null, $newBowler ?: null, $nextBatOrder, $inningsId]);
+
+        $innings['striker_id'] = $newStriker;
+        $innings['non_striker_id'] = $newNonStriker;
+        $innings['bowler_id'] = $newBowler;
+        $innings['next_bat_order'] = $nextBatOrder;
+    }
+
     $matchEnded = false;
     if ($inningsEnded) {
         if ((int)$innings['innings_no'] === 1) {
@@ -241,6 +483,7 @@ function record_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
             $ins2 = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id, target)
                 VALUES (?, 2, ?, ?, ?)');
             $ins2->execute([$match['id'], $battingTeam2, $bowlingTeam2, $target]);
+            init_innings_players($pdo, (int)$pdo->lastInsertId(), $battingTeam2, $bowlingTeam2);
             $pdo->prepare('UPDATE matches SET current_innings = 2 WHERE id = ?')->execute([$match['id']]);
         } else {
             finish_match($pdo, (int)$match['id']);
@@ -259,6 +502,45 @@ function record_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
         'innings' => $innings,
         'match' => $match,
     ];
+}
+
+/**
+ * Auto-plays up to $maxBalls random balls on behalf of $uid, for the "Autoplay" controls on the play
+ * screen. Stops early if the innings/match ends, or (unless $allowInningsCross) once the current
+ * innings finishes — so "1 Over"/"Half Match"/"Custom" never spill into a new innings, while
+ * "Full Match" is allowed to keep going through as many innings as $uid still controls.
+ */
+function autoplay_balls(PDO $pdo, int $matchId, int $maxBalls, int $uid, bool $allowInningsCross = false): array {
+    $played = 0;
+    $lastResult = null;
+    $startInningsId = null;
+
+    for ($i = 0; $i < $maxBalls; $i++) {
+        $match = get_match($pdo, $matchId);
+        if (!$match || $match['status'] !== 'in_progress') {
+            break;
+        }
+        $innings = get_current_innings($pdo, $matchId);
+        if (!$innings || $innings['completed']) {
+            break;
+        }
+        if ($startInningsId === null) {
+            $startInningsId = (int)$innings['id'];
+        } elseif (!$allowInningsCross && (int)$innings['id'] !== $startInningsId) {
+            break;
+        }
+        if (!can_play_ball($match, $innings, $uid)) {
+            break;
+        }
+
+        $lastResult = record_ball($pdo, (int)$innings['id'], mt_rand(0, 99));
+        $played++;
+        if ($lastResult['match_ended']) {
+            break;
+        }
+    }
+
+    return ['played' => $played, 'last' => $lastResult];
 }
 
 function finish_match(PDO $pdo, int $matchId): void {

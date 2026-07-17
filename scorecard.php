@@ -13,6 +13,11 @@ if (!$match || ($match['user1_id'] != $uid && $match['user2_id'] != $uid)) {
 }
 
 $inningsList = get_innings_list($pdo, $matchId);
+$scorecards = get_match_scorecard($pdo, $matchId);
+$scorecardByInningsId = [];
+foreach ($scorecards as $card) {
+    $scorecardByInningsId[$card['innings_id']] = $card;
+}
 
 $pageTitle = 'Scorecard';
 require __DIR__ . '/includes/header.php';
@@ -52,6 +57,9 @@ require __DIR__ . '/includes/header.php';
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if (isset($scorecardByInningsId[(int)$inn['id']])): ?>
+            <?= innings_scorecard_html($scorecardByInningsId[(int)$inn['id']], false) ?>
+        <?php endif; ?>
     </div>
     <?php endforeach; ?>
 

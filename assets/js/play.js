@@ -34,6 +34,39 @@
                     setTimeout(() => window.location.reload(), 1500);
                 });
         };
+
+        const statusEl = document.getElementById('autoplay-status');
+        const autoplayButtons = document.querySelectorAll('.autoplay-btn');
+        const hitBtn = document.getElementById('hit-btn');
+        autoplayButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const autoMode = btn.dataset.mode;
+                const overs = autoMode === 'custom'
+                    ? parseInt(document.getElementById('autoplay-overs').value, 10) || 1
+                    : undefined;
+
+                autoplayButtons.forEach((b) => { b.disabled = true; });
+                if (hitBtn) hitBtn.disabled = true;
+                if (statusEl) statusEl.textContent = 'Playing...';
+
+                fetch('/cricket/api/autoplay.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ match_id: matchId, mode: autoMode, overs })
+                })
+                    .then((r) => r.json())
+                    .then((data) => {
+                        if (data.error && statusEl) {
+                            statusEl.textContent = data.error;
+                            autoplayButtons.forEach((b) => { b.disabled = false; });
+                            if (hitBtn) hitBtn.disabled = false;
+                            return;
+                        }
+                        window.location.reload();
+                    })
+                    .catch(() => window.location.reload());
+            });
+        });
     } else if (mode === 'online') {
         // Spectator: poll for state changes and reload when something happened.
         const poll = setInterval(function () {

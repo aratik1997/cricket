@@ -155,21 +155,35 @@ $innings = get_current_innings($pdo, $matchId);
 $inningsList = get_innings_list($pdo, $matchId);
 $balls = $innings ? get_balls_for_innings($pdo, (int)$innings['id']) : [];
 
+$scorecards = get_match_scorecard($pdo, $matchId);
+$currentCard = null;
+foreach ($scorecards as $card) {
+    if ($card['innings_id'] === (int)$innings['id']) {
+        $currentCard = $card;
+        break;
+    }
+}
+$strikerName = '';
+$bowlerName = '';
+if ($currentCard) {
+    foreach ($currentCard['batting'] as $b) {
+        if ($b['is_striker']) { $strikerName = $b['name']; break; }
+    }
+    foreach ($currentCard['bowling'] as $bw) {
+        if ($bw['is_current']) { $bowlerName = $bw['name']; break; }
+    }
+}
+
 // Work out whose turn it is.
-$myTurn = false;
+$myTurn = can_play_ball($match, $innings, $uid);
 $myName = current_username();
 $waitingText = 'Waiting...';
 
 if ($match['mode'] === 'local') {
-    $myTurn = true;
     $myName = ((int)$innings['batting_team_id'] === (int)$match['team1_id'])
         ? $match['player1_name'] : $match['player2_name'];
 } elseif ($match['mode'] === 'online') {
-    $battingIsTeam1 = (int)$innings['batting_team_id'] === (int)$match['team1_id'];
-    $myTurn = $battingIsTeam1 ? ((int)$match['user1_id'] === $uid) : ((int)$match['user2_id'] === $uid);
     $waitingText = "Waiting for your opponent's shot...";
-} else { // single, worldcup
-    $myTurn = (int)$innings['batting_team_id'] === (int)$match['team1_id'];
 }
 
 $currentOverBalls = [];
@@ -197,6 +211,16 @@ require __DIR__ . '/includes/header.php';
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if ($currentCard): ?>
+        <p class="run-rate-line">
+            CRR: <strong><?= number_format($currentCard['crr'], 2) ?></strong>
+            <?php if ($currentCard['required']): ?>
+                &middot; Need <strong><?= (int)$currentCard['required']['runs_needed'] ?></strong> run<?= $currentCard['required']['runs_needed'] === 1 ? '' : 's' ?>
+                from <strong><?= (int)$currentCard['required']['balls_left'] ?></strong> ball<?= $currentCard['required']['balls_left'] === 1 ? '' : 's' ?> to win
+                &middot; RRR: <strong><?= number_format($currentCard['required']['rrr'], 2) ?></strong>
+            <?php endif; ?>
+        </p>
+        <?php endif; ?>
         <p class="match-meta"><?= (int)$match['overs_limit'] ?> overs &middot; <?= (int)$match['wickets_limit'] ?> wickets to lose</p>
         <p class="toss-note"><?= htmlspecialchars(toss_summary_text($match)) ?></p>
         <div class="this-over">
@@ -207,6 +231,16 @@ require __DIR__ . '/includes/header.php';
                 </span>
             <?php endforeach; ?>
         </div>
+        <?php if ($strikerName || $bowlerName): ?>
+        <p class="on-strike-line">
+            <?php if ($strikerName): ?>🏏 <strong><?= htmlspecialchars($strikerName) ?></strong> on strike<?php endif; ?>
+            <?php if ($strikerName && $bowlerName): ?> &middot; <?php endif; ?>
+            <?php if ($bowlerName): ?>🎯 <strong><?= htmlspecialchars($bowlerName) ?></strong> bowling<?php endif; ?>
+        </p>
+        <?php endif; ?>
+        <div class="stats-btn-row">
+            <button id="stats-btn" type="button" class="btn btn-small">Player Stats</button>
+        </div>
     </div>
 
     <?php if ($myTurn): ?>
@@ -216,6 +250,18 @@ require __DIR__ . '/includes/header.php';
         <button id="hit-btn" class="btn btn-hit">HIT</button>
         <p id="ball-result" class="ball-result"></p>
         <p class="rule-hint">1-6 = runs &middot; 7-9 = dot ball &middot; 0 = WICKET</p>
+
+        <div class="autoplay-row">
+            <span class="label">Autoplay:</span>
+            <button type="button" class="btn btn-small autoplay-btn" data-mode="over">1 Over</button>
+            <button type="button" class="btn btn-small autoplay-btn" data-mode="half">Half Match</button>
+            <button type="button" class="btn btn-small autoplay-btn" data-mode="full">Full Match</button>
+            <span class="autoplay-custom">
+                <input type="number" id="autoplay-overs" min="1" max="20" value="1" class="autoplay-input" aria-label="Custom overs">
+                <button type="button" class="btn btn-small autoplay-btn" data-mode="custom">Custom Overs</button>
+            </span>
+        </div>
+        <p id="autoplay-status" class="muted"></p>
     </div>
     <?php else: ?>
     <div class="hit-zone spectate">
@@ -223,6 +269,20 @@ require __DIR__ . '/includes/header.php';
     </div>
     <?php endif; ?>
 </div>
+
+<div id="stats-modal" class="modal-overlay" hidden>
+    <div class="modal-card">
+        <div class="modal-head">
+            <h2>Player Stats</h2>
+            <button id="stats-close" type="button" class="modal-close" aria-label="Close">&times;</button>
+        </div>
+        <?php foreach ($scorecards as $card): ?>
+            <?= innings_scorecard_html($card) ?>
+        <?php endforeach; ?>
+    </div>
+</div>
+
 <script src="/cricket/assets/js/stopwatch.js"></script>
 <script src="/cricket/assets/js/play.js"></script>
+<script src="/cricket/assets/js/stats_modal.js"></script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

@@ -35,16 +35,9 @@ if (!$innings || $innings['completed']) {
 }
 
 // Authorization: only the user who owns the batting team may play this ball.
-$battingIsTeam1 = (int)$innings['batting_team_id'] === (int)$match['team1_id'];
-$authorizedUser = $battingIsTeam1 ? (int)$match['user1_id'] : (int)$match['user2_id'];
-if ($match['mode'] === 'online' && $authorizedUser !== $uid) {
+if (!can_play_ball($match, $innings, $uid)) {
     http_response_code(403);
     echo json_encode(['error' => "It's not your turn"]);
-    exit;
-}
-if (in_array($match['mode'], ['single', 'worldcup'], true) && !$battingIsTeam1) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Computer is batting']);
     exit;
 }
 

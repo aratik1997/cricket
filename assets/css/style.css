@@ -209,6 +209,71 @@ h1 { margin-top: 0; }
 .btn-hit:disabled { opacity: 0.5; box-shadow: none; }
 .ball-result { font-size: 1.3rem; font-weight: 700; min-height: 1.6em; }
 .rule-hint { color: var(--muted); font-size: 0.85rem; }
+.on-strike-line { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; text-align: center; }
+.run-rate-line { color: var(--muted); font-size: 0.9rem; text-align: center; margin: 8px 0 0; }
+.run-rate-line strong { color: var(--gold); }
+.stats-btn-row { display: flex; justify-content: center; margin-top: 10px; }
+
+.autoplay-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.autoplay-row .label { color: var(--muted); font-size: 0.85rem; }
+.autoplay-custom { display: inline-flex; align-items: center; gap: 6px; }
+.autoplay-input {
+    width: 56px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0e1a13;
+    color: var(--text);
+    font-size: 0.9rem;
+}
+#autoplay-status { text-align: center; min-height: 1.4em; font-size: 0.85rem; }
+
+/* Player Stats modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 10, 7, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.modal-head h2 { margin: 0; color: var(--gold); }
+.modal-close { background: none; border: none; color: var(--muted); font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+.modal-close:hover { color: var(--text); }
+
+.stats-innings { margin-bottom: 20px; }
+.stats-innings:last-child { margin-bottom: 0; }
+.stats-innings h3 { margin: 0 0 6px; color: var(--pitch); }
+.stats-required { color: var(--gold); font-size: 0.9rem; margin: 0 0 10px; }
+.stats-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 0.9rem; }
+.stats-table th, .stats-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.stats-table th:not(:first-child), .stats-table td:not(:first-child) { text-align: right; }
+.stats-table th { text-align: left; color: var(--muted); font-weight: 600; }
+.stats-table tr.stats-active td { color: var(--gold); font-weight: 700; }
+.stats-table tr.stats-pending td { color: var(--muted); }
 
 /* Scorecard */
 .result-banner {
