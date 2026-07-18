@@ -34,7 +34,7 @@ require __DIR__ . '/includes/header.php';
     <ul class="saved-list">
         <?php foreach ($savedMatches as $m): ?>
         <li>
-            <span><?= htmlspecialchars(ucfirst($m['mode'])) ?>: <?= htmlspecialchars($m['team1_code']) ?> vs <?= htmlspecialchars($m['team2_code'] ?? '?') ?></span>
+            <span><?= htmlspecialchars(ucwords(str_replace('_', ' ', $m['mode']))) ?>: <?= htmlspecialchars($m['team1_code']) ?> vs <?= htmlspecialchars($m['team2_code'] ?? '?') ?></span>
             <a class="btn btn-small" href="/cricket/play.php?match=<?= (int)$m['id'] ?>">Resume</a>
         </li>
         <?php endforeach; ?>
@@ -64,6 +64,10 @@ require __DIR__ . '/includes/header.php';
     <a class="mode-card" href="/cricket/setup_worldcup.php">
         <h2>World Cup</h2>
         <p>Single player tournament: pick your team and take on the world.</p>
+    </a>
+    <a class="mode-card" href="/cricket/setup_test.php">
+        <h2>Test Match</h2>
+        <p>5 days, 4 innings, a live day clock &mdash; vs computer, same screen, or online.</p>
     </a>
 </section>
 

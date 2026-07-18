@@ -68,6 +68,27 @@ h1 { margin-top: 0; }
     margin-bottom: 20px;
 }
 
+.mode-tab-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 22px; }
+.mode-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #0e1a13;
+    color: var(--muted);
+    font-weight: 600;
+    transition: transform 0.15s, border-color 0.15s, color 0.15s;
+}
+.mode-tab-icon { font-size: 1.1rem; line-height: 1; }
+.mode-tab:hover { color: var(--text); border-color: var(--pitch); text-decoration: none; transform: translateY(-2px); }
+.mode-tab.active {
+    color: #05170b;
+    background: var(--gold);
+    border-color: var(--gold);
+}
+
 .auth-card { max-width: 420px; margin: 40px auto; }
 
 .stack-form { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
@@ -212,7 +233,11 @@ h1 { margin-top: 0; }
 .on-strike-line { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; text-align: center; }
 .run-rate-line { color: var(--muted); font-size: 0.9rem; text-align: center; margin: 8px 0 0; }
 .run-rate-line strong { color: var(--gold); }
+.lead-line { color: var(--text); font-size: 0.95rem; text-align: center; margin: 8px 0 0; }
+.lead-line strong { color: var(--pitch); }
 .stats-btn-row { display: flex; justify-content: center; margin-top: 10px; }
+.ball-hint { color: var(--muted); font-size: 0.85rem; font-style: italic; text-align: center; margin: 0 0 8px; min-height: 1.3em; }
+.primed-line { color: var(--gold); font-size: 0.85rem; text-align: center; margin: 0 0 8px; }
 
 .autoplay-row {
     display: flex;
@@ -236,6 +261,47 @@ h1 { margin-top: 0; }
     font-size: 0.9rem;
 }
 #autoplay-status { text-align: center; min-height: 1.4em; font-size: 0.85rem; }
+
+/* Test match */
+.day-timer-line {
+    text-align: center;
+    font-size: 1rem;
+    color: var(--gold);
+    background: #0e1a13;
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 4px 0 10px;
+    font-variant-numeric: tabular-nums;
+}
+#day-timer-clock { font-weight: 700; }
+.day-break-card { text-align: center; max-width: 420px; margin: 60px auto; }
+.declare-row { display: flex; justify-content: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.btn-declare { background: var(--red); color: #fff; }
+.btn-declare:hover { background: #d8493a; }
+#declare-status { text-align: center; min-height: 1.4em; font-size: 0.85rem; }
+
+/* Manual batsman/bowler picker */
+.picker-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.picker-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.picker-select {
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0e1a13;
+    color: var(--text);
+    font-size: 0.9rem;
+    max-width: 200px;
+}
+#picker-status { text-align: center; min-height: 1.4em; font-size: 0.85rem; margin-top: 4px; }
 
 /* Player Stats modal */
 .modal-overlay {

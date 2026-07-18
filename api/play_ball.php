@@ -41,7 +41,16 @@ if (!can_play_ball($match, $innings, $uid)) {
     exit;
 }
 
-$result = record_ball($pdo, (int)$innings['id'], $value);
+if (is_test_mode($match['mode'])) {
+    if (test_day_status($match) !== 'active') {
+        http_response_code(409);
+        echo json_encode(['error' => 'Play has stopped for the day']);
+        exit;
+    }
+    $result = record_test_ball($pdo, (int)$innings['id'], $value);
+} else {
+    $result = record_ball($pdo, (int)$innings['id'], $value);
+}
 
 echo json_encode([
     'outcome' => $result['outcome'],

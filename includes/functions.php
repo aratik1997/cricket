@@ -13,17 +13,60 @@ function resolve_ball(int $stopwatchValue): array {
     return ['outcome' => 'dot', 'runs' => 0];
 }
 
+/**
+ * Test-match rule: 1, 2 and 3 count immediately, same as the quick formats — but a 4, 6, 5, or a
+ * wicket only actually lands the SECOND time that same digit comes up (the two hits don't need to
+ * be back to back — one now, the matching one whenever later). Until the second hit lands, the ball
+ * is a dot. This makes boundaries and wickets genuinely hard-won, the way they are in a real 5-day
+ * game, without touching the odds of ones, twos and threes.
+ *
+ * $innings must have the pending_four/pending_five/pending_six/pending_wicket flags loaded. Returns
+ * the ball outcome plus which pending field (if any) changed and what it changed to, so the caller
+ * can persist it alongside the rest of the ball's state.
+ */
+function resolve_test_ball(array $innings, int $stopwatchValue): array {
+    $digit = $stopwatchValue % 10;
+
+    if ($digit >= 1 && $digit <= 3) {
+        return ['outcome' => 'run', 'runs' => $digit, 'pending_field' => null, 'primed' => false];
+    }
+    if ($digit >= 7 && $digit <= 9) {
+        return ['outcome' => 'dot', 'runs' => 0, 'pending_field' => null, 'primed' => false];
+    }
+
+    // digit is 0 (wicket) or 4/5/6 (a boundary) — both need that same digit to come up twice.
+    $field = $digit === 0 ? 'pending_wicket' : ['pending_four', 'pending_five', 'pending_six'][$digit - 4];
+    $alreadyPrimed = !empty($innings[$field]);
+
+    if ($alreadyPrimed) {
+        return [
+            'outcome' => $digit === 0 ? 'wicket' : 'run',
+            'runs' => $digit === 0 ? 0 : $digit,
+            'pending_field' => $field,
+            'primed' => false, // consumed — clear it back to 0
+        ];
+    }
+    return ['outcome' => 'dot', 'runs' => 0, 'pending_field' => $field, 'primed' => true];
+}
+
+/** True for any of the three test-match variants (vs computer / same-screen / online). */
+function is_test_mode(string $mode): bool {
+    return $mode === 'test' || $mode === 'test_local' || $mode === 'test_online';
+}
+
 /** Whether $uid is the person allowed to play the next ball of the currently batting team. */
 function can_play_ball(array $match, array $innings, int $uid): bool {
     $battingIsTeam1 = (int)$innings['batting_team_id'] === (int)$match['team1_id'];
-    if ($match['mode'] === 'local') {
+    $mode = $match['mode'];
+    if ($mode === 'local' || $mode === 'test_local') {
         return true; // same device either way
     }
-    if ($match['mode'] === 'online') {
+    if ($mode === 'online' || $mode === 'test_online') {
         $authorizedUser = $battingIsTeam1 ? (int)$match['user1_id'] : (int)$match['user2_id'];
         return $authorizedUser === $uid;
     }
-    // single, worldcup: the human always plays team1; the computer's innings is auto-simulated.
+    // single, worldcup, test (vs computer): the human always plays team1; the computer's innings
+    // is auto-simulated.
     return $battingIsTeam1;
 }
 
@@ -140,8 +183,15 @@ function start_innings1(PDO $pdo, int $matchId, int $battingTeamId): void {
     $match = get_match($pdo, $matchId);
     $bowlingTeamId = ($battingTeamId === (int)$match['team1_id']) ? (int)$match['team2_id'] : (int)$match['team1_id'];
 
-    $pdo->prepare('UPDATE matches SET status = "in_progress", batting_team_innings1 = ?, current_innings = 1 WHERE id = ?')
-        ->execute([$battingTeamId, $matchId]);
+    if (is_test_mode($match['mode'])) {
+        // Day 1's clock starts the moment the ball is in play.
+        $pdo->prepare('UPDATE matches SET status = "in_progress", batting_team_innings1 = ?, current_innings = 1,
+                test_day = 1, test_day_started_at = NOW() WHERE id = ?')
+            ->execute([$battingTeamId, $matchId]);
+    } else {
+        $pdo->prepare('UPDATE matches SET status = "in_progress", batting_team_innings1 = ?, current_innings = 1 WHERE id = ?')
+            ->execute([$battingTeamId, $matchId]);
+    }
 
     $innStmt = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id)
         VALUES (?, 1, ?, ?)');
@@ -175,7 +225,10 @@ function start_new_match(PDO $pdo, array $opts): int {
 }
 
 function get_match(PDO $pdo, int $matchId): ?array {
-    $stmt = $pdo->prepare('SELECT m.*, t1.name AS team1_name, t1.short_code AS team1_code,
+    // test_day_elapsed_seconds is computed by MySQL itself (not PHP's strtotime()) so the test-match
+    // day clock can't drift if the web server and DB server disagree about the local timezone.
+    $stmt = $pdo->prepare('SELECT m.*, TIMESTAMPDIFF(SECOND, m.test_day_started_at, NOW()) AS test_day_elapsed_seconds,
+            t1.name AS team1_name, t1.short_code AS team1_code,
             t2.name AS team2_name, t2.short_code AS team2_code,
             tw.name AS winner_name
         FROM matches m
@@ -239,7 +292,13 @@ function get_innings_scorecard(PDO $pdo, int $inningsId): ?array {
     $nonStrikerId = (int)($innings['non_striker_id'] ?? 0);
     $bowlerId = (int)($innings['bowler_id'] ?? 0);
 
-    $battingStmt = $pdo->prepare('SELECT p.id AS player_id, p.name,
+    $matchStmt = $pdo->prepare('SELECT mode, overs_limit, wickets_limit FROM matches WHERE id = ?');
+    $matchStmt->execute([(int)$innings['match_id']]);
+    $matchRow = $matchStmt->fetch();
+    $wicketsLimit = (int)$matchRow['wickets_limit'];
+    $isTestInnings = is_test_mode($matchRow['mode']);
+
+    $battingStmt = $pdo->prepare('SELECT p.id AS player_id, p.name, p.batting_order,
             COALESCE(SUM(b.runs_scored), 0) AS runs,
             COUNT(b.id) AS balls,
             MAX(CASE WHEN b.outcome = "wicket" THEN 1 ELSE 0 END) AS is_out
@@ -249,21 +308,36 @@ function get_innings_scorecard(PDO $pdo, int $inningsId): ?array {
         GROUP BY p.id, p.name, p.batting_order
         ORDER BY p.batting_order ASC');
     $battingStmt->execute([$inningsId, (int)$innings['batting_team_id']]);
-    $batting = [];
+    $appeared = [];
+    $yetToBat = [];
     foreach ($battingStmt->fetchAll() as $row) {
         $playerId = (int)$row['player_id'];
         $balls = (int)$row['balls'];
-        $batting[] = [
+        $isStriker = $playerId === $strikerId;
+        $isNonStriker = $playerId === $nonStrikerId;
+        $entry = [
             'player_id' => $playerId,
             'name' => $row['name'],
+            'batting_order' => (int)$row['batting_order'],
             'runs' => (int)$row['runs'],
             'balls' => $balls,
             'is_out' => (bool)$row['is_out'],
             'strike_rate' => $balls > 0 ? round($row['runs'] / $balls * 100, 1) : 0.0,
-            'is_striker' => $playerId === $strikerId,
-            'is_non_striker' => $playerId === $nonStrikerId,
+            'is_striker' => $isStriker,
+            'is_non_striker' => $isNonStriker,
         ];
+        if ($balls > 0 || $isStriker || $isNonStriker) {
+            $appeared[] = $entry;
+        } else {
+            $yetToBat[] = $entry;
+        }
     }
+    // Only as many "yet to bat" rows as could realistically still get a turn under this match's
+    // wickets-to-lose limit — with a manual pick, whoever's actually appeared may skip the order,
+    // so this tops up from whoever's left rather than assuming a strict batting-order prefix.
+    $slotsLeft = max($wicketsLimit + 1 - count($appeared), 0);
+    $batting = array_merge($appeared, array_slice($yetToBat, 0, $slotsLeft));
+    usort($batting, fn($a, $b) => $a['batting_order'] <=> $b['batting_order']);
 
     $bowlingStmt = $pdo->prepare('SELECT p.id AS player_id, p.name,
             COALESCE(SUM(b.runs_scored), 0) AS runs,
@@ -295,18 +369,24 @@ function get_innings_scorecard(PDO $pdo, int $inningsId): ?array {
     $runs = (int)$innings['runs'];
     $crr = $ballsBowled > 0 ? round($runs / ($ballsBowled / 6), 2) : 0.0;
 
+    // A target is only ever set on the innings actually chasing one — innings 2 in the limited-overs
+    // formats, innings 4 in a test match — so checking for a target is enough on its own.
     $required = null;
-    if ((int)$innings['innings_no'] === 2 && $innings['target'] !== null) {
-        $matchStmt = $pdo->prepare('SELECT overs_limit FROM matches WHERE id = ?');
-        $matchStmt->execute([(int)$innings['match_id']]);
-        $maxBalls = (int)$matchStmt->fetchColumn() * 6;
+    if ($innings['target'] !== null) {
         $runsNeeded = max((int)$innings['target'] - $runs, 0);
-        $ballsLeft = max($maxBalls - $ballsBowled, 0);
-        $required = [
-            'runs_needed' => $runsNeeded,
-            'balls_left' => $ballsLeft,
-            'rrr' => $ballsLeft > 0 ? round($runsNeeded / ($ballsLeft / 6), 2) : 0.0,
-        ];
+        if ($isTestInnings) {
+            // No fixed overs cap in Test cricket (the day clock is the real constraint, shown
+            // separately) — so there's no meaningful "balls left" / required run rate to compute.
+            $required = ['runs_needed' => $runsNeeded, 'balls_left' => null, 'rrr' => null];
+        } else {
+            $maxBalls = (int)$matchRow['overs_limit'] * 6;
+            $ballsLeft = max($maxBalls - $ballsBowled, 0);
+            $required = [
+                'runs_needed' => $runsNeeded,
+                'balls_left' => $ballsLeft,
+                'rrr' => $ballsLeft > 0 ? round($runsNeeded / ($ballsLeft / 6), 2) : 0.0,
+            ];
+        }
     }
 
     return [
@@ -318,6 +398,7 @@ function get_innings_scorecard(PDO $pdo, int $inningsId): ?array {
         'bowling_team_code' => $innings['bowling_team_code'],
         'runs' => $runs,
         'wickets' => (int)$innings['wickets'],
+        'wickets_left' => max($wicketsLimit - (int)$innings['wickets'], 0),
         'balls_bowled' => $ballsBowled,
         'target' => $innings['target'] !== null ? (int)$innings['target'] : null,
         'completed' => (bool)$innings['completed'],
@@ -340,6 +421,31 @@ function get_match_scorecard(PDO $pdo, int $matchId): array {
     return $cards;
 }
 
+/**
+ * The "who's ahead" line for a test match's 2nd/3rd innings (there's no target to chase yet in
+ * those two — that's the whole point of a first-innings lead). Returns null outside those innings.
+ */
+function get_test_lead_info(PDO $pdo, int $matchId, array $innings): ?array {
+    $inningsNo = (int)$innings['innings_no'];
+    if ($inningsNo !== 2 && $inningsNo !== 3) {
+        return null;
+    }
+    $inningsList = get_innings_list($pdo, $matchId);
+    $inn1 = $inningsList[0];
+
+    if ($inningsNo === 2) {
+        $diff = (int)$innings['runs'] - (int)$inn1['runs'];
+        $aheadCode = $diff >= 0 ? $innings['batting_team_code'] : $inn1['batting_team_code'];
+    } else {
+        $inn2 = $inningsList[1];
+        $teamAAgg = (int)$inn1['runs'] + (int)$innings['runs'];
+        $diff = $teamAAgg - (int)$inn2['runs'];
+        $aheadCode = $diff >= 0 ? $inn1['batting_team_code'] : $inn2['batting_team_code'];
+    }
+
+    return ['team_code' => $aheadCode, 'runs' => abs($diff), 'level' => $diff === 0];
+}
+
 /** Renders one innings' batting + bowling scorecard as HTML for the live Player Stats panel / scorecard page. */
 function innings_scorecard_html(array $card, bool $showHeader = true): string {
     $html = '<div class="stats-innings">';
@@ -350,9 +456,14 @@ function innings_scorecard_html(array $card, bool $showHeader = true): string {
     }
 
     if ($card['required']) {
-        $html .= '<p class="stats-required">Need ' . (int)$card['required']['runs_needed']
-            . ' runs off ' . (int)$card['required']['balls_left'] . ' balls'
-            . ' &middot; RRR ' . number_format($card['required']['rrr'], 2) . '</p>';
+        $html .= '<p class="stats-required">Need ' . (int)$card['required']['runs_needed'];
+        if ($card['required']['balls_left'] !== null) {
+            $html .= ' runs off ' . (int)$card['required']['balls_left'] . ' balls'
+                . ' &middot; RRR ' . number_format($card['required']['rrr'], 2);
+        } else {
+            $html .= ' more runs to win';
+        }
+        $html .= '</p>';
     }
 
     $html .= '<table class="stats-table"><thead><tr><th>Batter</th><th>R</th><th>B</th><th>SR</th></tr></thead><tbody>';
@@ -384,6 +495,127 @@ function innings_scorecard_html(array $card, bool $showHeader = true): string {
 
     $html .= '</div>';
     return $html;
+}
+
+/** Batting-team players available to be picked as the next batsman in (not out, not already at the crease). */
+function get_available_batsmen(PDO $pdo, array $innings): array {
+    $stmt = $pdo->prepare('SELECT p.id, p.name FROM players p
+        WHERE p.team_id = ?
+          AND p.id NOT IN (?, ?)
+          AND p.id NOT IN (
+              SELECT DISTINCT batsman_id FROM balls
+              WHERE innings_id = ? AND outcome = "wicket" AND batsman_id IS NOT NULL
+          )
+        ORDER BY p.batting_order ASC');
+    $stmt->execute([
+        (int)$innings['batting_team_id'],
+        (int)($innings['striker_id'] ?? 0),
+        (int)($innings['non_striker_id'] ?? 0),
+        (int)$innings['id'],
+    ]);
+    return $stmt->fetchAll();
+}
+
+/** Bowling-team players available to bowl the next over (anyone except whoever just bowled). */
+function get_available_bowlers(PDO $pdo, array $innings): array {
+    $stmt = $pdo->prepare('SELECT id, name FROM players WHERE team_id = ? AND id != ? ORDER BY batting_order ASC');
+    $stmt->execute([(int)$innings['bowling_team_id'], (int)($innings['bowler_id'] ?? 0)]);
+    return $stmt->fetchAll();
+}
+
+/** Queues up who should come in next on a wicket ("choose who bats" — just for fun, no hard validation). */
+function set_next_batsman(PDO $pdo, int $inningsId, int $playerId): void {
+    $pdo->prepare('UPDATE innings SET manual_next_batsman_id = ? WHERE id = ?')->execute([$playerId, $inningsId]);
+}
+
+/** Queues up who should bowl the next over ("choose who bowls" — just for fun, no hard validation). */
+function set_next_bowler(PDO $pdo, int $inningsId, int $playerId): void {
+    $pdo->prepare('UPDATE innings SET manual_next_bowler_id = ? WHERE id = ?')->execute([$playerId, $inningsId]);
+}
+
+/**
+ * Advances striker/non-striker/bowler state after a ball has been recorded: strike rotates on odd
+ * runs, the next batsman comes in on a wicket, and at the end of an over the ends change and the
+ * bowling side hands the ball to the next bowler. A manual pick queued via set_next_batsman()/
+ * set_next_bowler() is used (and then cleared) instead of the automatic order/rotation when present.
+ * Persists the new state to $innings and returns the updated row. Only call when the innings hasn't
+ * just ended.
+ */
+function advance_innings_players(PDO $pdo, array $innings, array $result, int $newBalls): array {
+    $inningsId = (int)$innings['id'];
+    $newStriker = (int)($innings['striker_id'] ?? 0);
+    $newNonStriker = (int)($innings['non_striker_id'] ?? 0);
+    $newBowler = (int)($innings['bowler_id'] ?? 0);
+    $manualBatsman = (int)($innings['manual_next_batsman_id'] ?? 0);
+    $manualBowler = (int)($innings['manual_next_bowler_id'] ?? 0);
+    $clearManualBatsman = false;
+    $clearManualBowler = false;
+
+    if ($result['outcome'] === 'wicket') {
+        if ($manualBatsman && $manualBatsman !== $newNonStriker) {
+            $newStriker = $manualBatsman;
+            $clearManualBatsman = true;
+        } else {
+            // First player in batting order not already dismissed and not currently at the other end.
+            $nextBatsman = $pdo->prepare('SELECT p.id FROM players p
+                WHERE p.team_id = ? AND p.id != ?
+                  AND p.id NOT IN (
+                      SELECT DISTINCT batsman_id FROM balls
+                      WHERE innings_id = ? AND outcome = "wicket" AND batsman_id IS NOT NULL
+                  )
+                ORDER BY p.batting_order ASC LIMIT 1');
+            $nextBatsman->execute([(int)$innings['batting_team_id'], $newNonStriker, $inningsId]);
+            $incomingId = $nextBatsman->fetchColumn();
+            if ($incomingId) {
+                $newStriker = (int)$incomingId;
+            }
+        }
+    } elseif ($result['runs'] % 2 === 1) {
+        [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
+    }
+
+    // Over complete: ends change (strike rotates) and the bowling side hands the ball to the next bowler.
+    if ($newBalls % 6 === 0) {
+        [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
+        if ($manualBowler && $manualBowler !== $newBowler) {
+            $newBowler = $manualBowler;
+            $clearManualBowler = true;
+        } else {
+            $bowlingSquad = $pdo->prepare('SELECT id FROM players WHERE team_id = ? ORDER BY batting_order ASC');
+            $bowlingSquad->execute([(int)$innings['bowling_team_id']]);
+            $squadIds = $bowlingSquad->fetchAll(PDO::FETCH_COLUMN);
+            if ($squadIds) {
+                $nextOverNo = intdiv($newBalls, 6) + 1;
+                $pick = (int)$squadIds[($nextOverNo - 1) % count($squadIds)];
+                if ($pick === $newBowler && count($squadIds) > 1) {
+                    $pick = (int)$squadIds[$nextOverNo % count($squadIds)];
+                }
+                $newBowler = $pick;
+            }
+        }
+    }
+
+    $sets = ['striker_id = ?', 'non_striker_id = ?', 'bowler_id = ?'];
+    $params = [$newStriker ?: null, $newNonStriker ?: null, $newBowler ?: null];
+    if ($clearManualBatsman) {
+        $sets[] = 'manual_next_batsman_id = NULL';
+    }
+    if ($clearManualBowler) {
+        $sets[] = 'manual_next_bowler_id = NULL';
+    }
+    $params[] = $inningsId;
+    $pdo->prepare('UPDATE innings SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($params);
+
+    $innings['striker_id'] = $newStriker;
+    $innings['non_striker_id'] = $newNonStriker;
+    $innings['bowler_id'] = $newBowler;
+    if ($clearManualBatsman) {
+        $innings['manual_next_batsman_id'] = null;
+    }
+    if ($clearManualBowler) {
+        $innings['manual_next_bowler_id'] = null;
+    }
+    return $innings;
 }
 
 /**
@@ -432,46 +664,7 @@ function record_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
     }
 
     if (!$inningsEnded) {
-        $newStriker = (int)($innings['striker_id'] ?? 0);
-        $newNonStriker = (int)($innings['non_striker_id'] ?? 0);
-        $newBowler = (int)($innings['bowler_id'] ?? 0);
-        $nextBatOrder = (int)($innings['next_bat_order'] ?? 3);
-
-        if ($result['outcome'] === 'wicket') {
-            $nextBatsman = $pdo->prepare('SELECT id FROM players WHERE team_id = ? AND batting_order = ?');
-            $nextBatsman->execute([(int)$innings['batting_team_id'], $nextBatOrder]);
-            $incomingId = $nextBatsman->fetchColumn();
-            if ($incomingId) {
-                $newStriker = (int)$incomingId;
-                $nextBatOrder++;
-            }
-        } elseif ($result['runs'] % 2 === 1) {
-            [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
-        }
-
-        // Over complete: ends change (strike rotates) and the bowling side hands the ball to the next bowler.
-        if ($newBalls % 6 === 0) {
-            [$newStriker, $newNonStriker] = [$newNonStriker, $newStriker];
-            $bowlingSquad = $pdo->prepare('SELECT id FROM players WHERE team_id = ? ORDER BY batting_order ASC');
-            $bowlingSquad->execute([(int)$innings['bowling_team_id']]);
-            $squadIds = $bowlingSquad->fetchAll(PDO::FETCH_COLUMN);
-            if ($squadIds) {
-                $nextOverNo = intdiv($newBalls, 6) + 1;
-                $pick = (int)$squadIds[($nextOverNo - 1) % count($squadIds)];
-                if ($pick === $newBowler && count($squadIds) > 1) {
-                    $pick = (int)$squadIds[$nextOverNo % count($squadIds)];
-                }
-                $newBowler = $pick;
-            }
-        }
-
-        $pdo->prepare('UPDATE innings SET striker_id = ?, non_striker_id = ?, bowler_id = ?, next_bat_order = ? WHERE id = ?')
-            ->execute([$newStriker ?: null, $newNonStriker ?: null, $newBowler ?: null, $nextBatOrder, $inningsId]);
-
-        $innings['striker_id'] = $newStriker;
-        $innings['non_striker_id'] = $newNonStriker;
-        $innings['bowler_id'] = $newBowler;
-        $innings['next_bat_order'] = $nextBatOrder;
+        $innings = advance_innings_players($pdo, $innings, $result, $newBalls);
     }
 
     $matchEnded = false;
@@ -520,6 +713,10 @@ function autoplay_balls(PDO $pdo, int $matchId, int $maxBalls, int $uid, bool $a
         if (!$match || $match['status'] !== 'in_progress') {
             break;
         }
+        $isTest = is_test_mode($match['mode']);
+        if ($isTest && test_day_status($match) !== 'active') {
+            break; // don't let autoplay run through a day boundary unattended
+        }
         $innings = get_current_innings($pdo, $matchId);
         if (!$innings || $innings['completed']) {
             break;
@@ -533,7 +730,9 @@ function autoplay_balls(PDO $pdo, int $matchId, int $maxBalls, int $uid, bool $a
             break;
         }
 
-        $lastResult = record_ball($pdo, (int)$innings['id'], mt_rand(0, 99));
+        $lastResult = $isTest
+            ? record_test_ball($pdo, (int)$innings['id'], mt_rand(0, 99))
+            : record_ball($pdo, (int)$innings['id'], mt_rand(0, 99));
         $played++;
         if ($lastResult['match_ended']) {
             break;
@@ -583,6 +782,240 @@ function simulate_innings(PDO $pdo, int $inningsId): void {
         $value = mt_rand(0, 99);
         $result = record_ball($pdo, $inningsId, $value);
         if ($result['innings_ended']) {
+            break;
+        }
+    }
+}
+
+/* =========================================================================
+ * Test match mode: 5 real-time-compressed days, 4 innings (bat/bowl/bat/bowl),
+ * declarations, and a draw if the clock runs out before the 4th innings finishes.
+ * ========================================================================= */
+
+/**
+ * Where a test match's day-clock currently stands: 'active' (still inside today's window),
+ * 'day_over' (today's window has elapsed but days remain — needs advance_test_day()), or
+ * 'time_up' (the final day's window has elapsed — the match is drawn).
+ */
+function test_day_status(array $match): string {
+    if (empty($match['test_day_started_at'])) {
+        return 'active';
+    }
+    // Elapsed time comes from get_match()'s TIMESTAMPDIFF (computed by MySQL), not PHP's strtotime()
+    // against the raw DATETIME string — that would drift by whatever offset separates the web
+    // server's and DB server's local timezones.
+    $elapsedSeconds = (int)($match['test_day_elapsed_seconds'] ?? 0);
+    $limitSeconds = (int)$match['test_day_minutes'] * 60;
+    if ($elapsedSeconds < $limitSeconds) {
+        return 'active';
+    }
+    return ((int)$match['test_day'] >= (int)$match['test_days_limit']) ? 'time_up' : 'day_over';
+}
+
+/** Seconds left in the test match's current day (never negative). */
+function test_day_seconds_left(array $match): int {
+    $limitSeconds = (int)$match['test_day_minutes'] * 60;
+    if (empty($match['test_day_started_at'])) {
+        return $limitSeconds;
+    }
+    $elapsed = (int)($match['test_day_elapsed_seconds'] ?? 0);
+    return max($limitSeconds - $elapsed, 0);
+}
+
+/** Starts the next day's clock once the human acknowledges "Day N complete". */
+function advance_test_day(PDO $pdo, int $matchId): void {
+    $pdo->prepare('UPDATE matches SET test_day = test_day + 1, test_day_started_at = NOW() WHERE id = ?')
+        ->execute([$matchId]);
+}
+
+/** Records one ball under test-match rules: tighter odds, no overs cap, all out at 10, and a target
+ * check that only applies to the 4th (final, chasing) innings. Mirrors record_ball()'s shape. */
+function record_test_ball(PDO $pdo, int $inningsId, int $stopwatchValue): array {
+    $stmt = $pdo->prepare('SELECT * FROM innings WHERE id = ?');
+    $stmt->execute([$inningsId]);
+    $innings = $stmt->fetch();
+    if (!$innings || $innings['completed']) {
+        throw new RuntimeException('Innings is not active.');
+    }
+
+    $match = get_match($pdo, (int)$innings['match_id']);
+    $result = resolve_test_ball($innings, $stopwatchValue);
+
+    $overNo = intdiv((int)$innings['balls_bowled'], 6) + 1;
+    $ballNo = ((int)$innings['balls_bowled'] % 6) + 1;
+    $strikerId = $innings['striker_id'] ?: null;
+    $bowlerId = $innings['bowler_id'] ?: null;
+
+    $insert = $pdo->prepare('INSERT INTO balls (innings_id, over_no, ball_no, stopwatch_value, outcome, runs_scored, batsman_id, bowler_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    $insert->execute([$inningsId, $overNo, $ballNo, $stopwatchValue, $result['outcome'], $result['runs'], $strikerId, $bowlerId]);
+
+    $newRuns = (int)$innings['runs'] + $result['runs'];
+    $newWickets = (int)$innings['wickets'] + ($result['outcome'] === 'wicket' ? 1 : 0);
+    $newBalls = (int)$innings['balls_bowled'] + 1;
+
+    if ($result['pending_field'] !== null) {
+        $field = $result['pending_field'];
+        $pdo->prepare("UPDATE innings SET runs = ?, wickets = ?, balls_bowled = ?, {$field} = ? WHERE id = ?")
+            ->execute([$newRuns, $newWickets, $newBalls, $result['primed'] ? 1 : 0, $inningsId]);
+        $innings[$field] = $result['primed'] ? 1 : 0;
+    } else {
+        $pdo->prepare('UPDATE innings SET runs = ?, wickets = ?, balls_bowled = ? WHERE id = ?')
+            ->execute([$newRuns, $newWickets, $newBalls, $inningsId]);
+    }
+
+    $innings['runs'] = $newRuns;
+    $innings['wickets'] = $newWickets;
+    $innings['balls_bowled'] = $newBalls;
+
+    $inningsEnded = false;
+    // Only the 4th (final, chasing) innings can finish early by reaching the target — the first
+    // three innings always run their full course, exactly like real Test cricket.
+    $reasonTarget = (int)$innings['innings_no'] === 4 && $innings['target'] !== null && $newRuns >= (int)$innings['target'];
+
+    if ($newWickets >= (int)$match['wickets_limit'] || $reasonTarget) {
+        $inningsEnded = true;
+        $pdo->prepare('UPDATE innings SET completed = 1 WHERE id = ?')->execute([$inningsId]);
+        $innings['completed'] = 1;
+    }
+
+    if (!$inningsEnded) {
+        $innings = advance_innings_players($pdo, $innings, $result, $newBalls);
+    }
+
+    $matchEnded = false;
+    if ($inningsEnded) {
+        $matchEnded = progress_test_match($pdo, (int)$match['id'], (int)$innings['innings_no']);
+    }
+
+    $match = get_match($pdo, (int)$match['id']);
+
+    return [
+        'outcome' => $result['outcome'],
+        'runs' => $result['runs'],
+        'stopwatch_value' => $stopwatchValue,
+        'innings_ended' => $inningsEnded,
+        'match_ended' => $matchEnded,
+        'innings' => $innings,
+        'match' => $match,
+    ];
+}
+
+/** Ends the current test-match innings early by declaration, then progresses the match same as all-out. */
+function declare_test_innings(PDO $pdo, int $inningsId): array {
+    $stmt = $pdo->prepare('SELECT * FROM innings WHERE id = ?');
+    $stmt->execute([$inningsId]);
+    $innings = $stmt->fetch();
+    if (!$innings || $innings['completed']) {
+        throw new RuntimeException('Innings is not active.');
+    }
+    $pdo->prepare('UPDATE innings SET completed = 1, declared = 1 WHERE id = ?')->execute([$inningsId]);
+    $matchId = (int)$innings['match_id'];
+    $matchEnded = progress_test_match($pdo, $matchId, (int)$innings['innings_no']);
+    return ['match_ended' => $matchEnded, 'match' => get_match($pdo, $matchId)];
+}
+
+/** Moves a test match from one innings to the next (bat/bowl/bat/bowl) once an innings ends,
+ * or computes the result once the 4th innings finishes. Returns whether the match just ended. */
+function progress_test_match(PDO $pdo, int $matchId, int $endedInningsNo): bool {
+    $inningsList = get_innings_list($pdo, $matchId);
+    $inn1 = $inningsList[0];
+
+    if ($endedInningsNo === 1) {
+        $battingTeam2 = (int)$inn1['bowling_team_id'];
+        $bowlingTeam2 = (int)$inn1['batting_team_id'];
+        $ins = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id) VALUES (?, 2, ?, ?)');
+        $ins->execute([$matchId, $battingTeam2, $bowlingTeam2]);
+        init_innings_players($pdo, (int)$pdo->lastInsertId(), $battingTeam2, $bowlingTeam2);
+        $pdo->prepare('UPDATE matches SET current_innings = 2 WHERE id = ?')->execute([$matchId]);
+        return false;
+    }
+
+    if ($endedInningsNo === 2) {
+        $battingTeam3 = (int)$inn1['batting_team_id'];
+        $bowlingTeam3 = (int)$inn1['bowling_team_id'];
+        $ins = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id) VALUES (?, 3, ?, ?)');
+        $ins->execute([$matchId, $battingTeam3, $bowlingTeam3]);
+        init_innings_players($pdo, (int)$pdo->lastInsertId(), $battingTeam3, $bowlingTeam3);
+        $pdo->prepare('UPDATE matches SET current_innings = 3 WHERE id = ?')->execute([$matchId]);
+        return false;
+    }
+
+    if ($endedInningsNo === 3) {
+        $inn2 = $inningsList[1];
+        $inn3 = $inningsList[2];
+        $battingTeam4 = (int)$inn2['batting_team_id'];
+        $bowlingTeam4 = (int)$inn2['bowling_team_id'];
+        $target = ((int)$inn1['runs'] + (int)$inn3['runs']) - (int)$inn2['runs'] + 1;
+        $ins = $pdo->prepare('INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id, target) VALUES (?, 4, ?, ?, ?)');
+        $ins->execute([$matchId, $battingTeam4, $bowlingTeam4, $target]);
+        init_innings_players($pdo, (int)$pdo->lastInsertId(), $battingTeam4, $bowlingTeam4);
+        $pdo->prepare('UPDATE matches SET current_innings = 4 WHERE id = ?')->execute([$matchId]);
+        return false;
+    }
+
+    finish_test_match($pdo, $matchId);
+    return true;
+}
+
+/** Computes (or draws) the result of a test match from however many of its 4 innings were completed. */
+function finish_test_match(PDO $pdo, int $matchId): void {
+    $inningsList = get_innings_list($pdo, $matchId);
+
+    if (count($inningsList) < 4 || !$inningsList[3]['completed']) {
+        // Time ran out before the 4th innings finished — a real Test can end without a winner.
+        $pdo->prepare('UPDATE matches SET status = "completed", winner_team_id = NULL, result_text = ? WHERE id = ?')
+            ->execute(["Match drawn \xE2\x80\x94 5 days elapsed", $matchId]);
+        return;
+    }
+
+    $match = get_match($pdo, $matchId);
+    $inn1 = $inningsList[0];
+    $inn2 = $inningsList[1];
+    $inn3 = $inningsList[2];
+    $inn4 = $inningsList[3];
+
+    $teamATotal = (int)$inn1['runs'] + (int)$inn3['runs'];
+    $teamBTotal = (int)$inn2['runs'] + (int)$inn4['runs'];
+    $teamAId = (int)$inn1['batting_team_id'];
+    $teamBId = (int)$inn2['batting_team_id'];
+
+    $winnerTeamId = null;
+    $resultText = 'Match tied';
+
+    if ($teamBTotal > $teamATotal) {
+        $winnerTeamId = $teamBId;
+        $wicketsInHand = max((int)$match['wickets_limit'] - (int)$inn4['wickets'], 0);
+        $resultText = $inn2['batting_team_name'] . ' won by ' . $wicketsInHand . ' wicket(s)';
+    } elseif ($teamATotal > $teamBTotal) {
+        $winnerTeamId = $teamAId;
+        $margin = $teamATotal - $teamBTotal;
+        $resultText = $inn1['batting_team_name'] . ' won by ' . $margin . ' run(s)';
+    }
+
+    $pdo->prepare('UPDATE matches SET status = "completed", winner_team_id = ?, result_text = ? WHERE id = ?')
+        ->execute([$winnerTeamId, $resultText, $matchId]);
+}
+
+/** Instantly simulates every remaining ball of a test innings (AI turns), with an occasional
+ * declaration once the side is well-set — real captains rarely bat all the way to 10 down. */
+function simulate_test_innings(PDO $pdo, int $inningsId): void {
+    $stmt = $pdo->prepare('SELECT * FROM innings WHERE id = ?');
+    $stmt->execute([$inningsId]);
+    $innings = $stmt->fetch();
+    if (!$innings || $innings['completed']) {
+        return;
+    }
+    while (true) {
+        $value = mt_rand(0, 99);
+        $result = record_test_ball($pdo, $inningsId, $value);
+        if ($result['innings_ended']) {
+            break;
+        }
+        $inn = $result['innings'];
+        $canDeclare = (int)$inn['innings_no'] !== 4;
+        if ($canDeclare && (int)$inn['wickets'] >= 6 && (int)$inn['runs'] >= 150 && mt_rand(1, 20) === 1) {
+            declare_test_innings($pdo, $inningsId);
             break;
         }
     }

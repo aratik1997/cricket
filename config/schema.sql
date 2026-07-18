@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS players (
 
 CREATE TABLE IF NOT EXISTS matches (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    mode ENUM('single','online','local','worldcup') NOT NULL,
-    status ENUM('waiting','toss_call','toss','in_progress','completed') NOT NULL DEFAULT 'waiting',
+    mode ENUM('single','online','local','worldcup','test','test_local','test_online') NOT NULL,
+    status ENUM('waiting','toss_call','toss','in_progress','day_break','completed') NOT NULL DEFAULT 'waiting',
     team1_id INT NOT NULL,
     team2_id INT NULL,
     user1_id INT NOT NULL,
@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS matches (
     worldcup_fixture_id INT NULL,
     winner_team_id INT NULL,
     result_text VARCHAR(120) NULL,
+    test_day TINYINT NULL,
+    test_days_limit TINYINT NOT NULL DEFAULT 5,
+    test_day_minutes SMALLINT NOT NULL DEFAULT 20,
+    test_day_started_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (team1_id) REFERENCES teams(id),
@@ -69,6 +73,13 @@ CREATE TABLE IF NOT EXISTS innings (
     non_striker_id INT NULL,
     bowler_id INT NULL,
     next_bat_order TINYINT NOT NULL DEFAULT 3,
+    declared TINYINT(1) NOT NULL DEFAULT 0,
+    manual_next_batsman_id INT NULL,
+    manual_next_bowler_id INT NULL,
+    pending_four TINYINT(1) NOT NULL DEFAULT 0,
+    pending_five TINYINT(1) NOT NULL DEFAULT 0,
+    pending_six TINYINT(1) NOT NULL DEFAULT 0,
+    pending_wicket TINYINT(1) NOT NULL DEFAULT 0,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 

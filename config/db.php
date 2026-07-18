@@ -72,6 +72,39 @@ try {
         $pdo->exec("ALTER TABLE balls ADD COLUMN batsman_id INT NULL");
         $pdo->exec("ALTER TABLE balls ADD COLUMN bowler_id INT NULL");
     }
+
+    // Test match mode: 5-day/4-innings games with a compressed day timer and manual player picks.
+    $hasTestDay = $pdo->query("SHOW COLUMNS FROM matches LIKE 'test_day'")->fetch();
+    if (!$hasTestDay) {
+        $pdo->exec("ALTER TABLE matches MODIFY mode ENUM('single','online','local','worldcup','test') NOT NULL");
+        $pdo->exec("ALTER TABLE matches MODIFY status ENUM('waiting','toss_call','toss','in_progress','day_break','completed') NOT NULL DEFAULT 'waiting'");
+        $pdo->exec("ALTER TABLE matches ADD COLUMN test_day TINYINT NULL");
+        $pdo->exec("ALTER TABLE matches ADD COLUMN test_days_limit TINYINT NOT NULL DEFAULT 5");
+        $pdo->exec("ALTER TABLE matches ADD COLUMN test_day_minutes SMALLINT NOT NULL DEFAULT 20");
+        $pdo->exec("ALTER TABLE matches ADD COLUMN test_day_started_at DATETIME NULL");
+    }
+    $hasDeclared = $pdo->query("SHOW COLUMNS FROM innings LIKE 'declared'")->fetch();
+    if (!$hasDeclared) {
+        $pdo->exec("ALTER TABLE innings ADD COLUMN declared TINYINT(1) NOT NULL DEFAULT 0");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN manual_next_batsman_id INT NULL");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN manual_next_bowler_id INT NULL");
+    }
+
+    // Test matches can also be played same-screen or online, not just against the computer.
+    $modeCol = $pdo->query("SHOW COLUMNS FROM matches LIKE 'mode'")->fetch();
+    if ($modeCol && strpos($modeCol['Type'], 'test_local') === false) {
+        $pdo->exec("ALTER TABLE matches MODIFY mode ENUM('single','online','local','worldcup','test','test_local','test_online') NOT NULL");
+    }
+
+    // Test-match "hit it twice" rule: a 4, 5, 6 or wicket only actually lands the second time that
+    // same digit comes up (any ball later, not necessarily the next one).
+    $hasPendingFour = $pdo->query("SHOW COLUMNS FROM innings LIKE 'pending_four'")->fetch();
+    if (!$hasPendingFour) {
+        $pdo->exec("ALTER TABLE innings ADD COLUMN pending_four TINYINT(1) NOT NULL DEFAULT 0");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN pending_five TINYINT(1) NOT NULL DEFAULT 0");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN pending_six TINYINT(1) NOT NULL DEFAULT 0");
+        $pdo->exec("ALTER TABLE innings ADD COLUMN pending_wicket TINYINT(1) NOT NULL DEFAULT 0");
+    }
 } catch (PDOException $e) {
     die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
 }

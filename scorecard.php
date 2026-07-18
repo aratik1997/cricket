@@ -37,9 +37,10 @@ require __DIR__ . '/includes/header.php';
 
     <?php foreach ($inningsList as $inn): ?>
     <div class="innings-card">
-        <h2><?= htmlspecialchars($inn['batting_team_name']) ?></h2>
+        <h2><?= htmlspecialchars($inn['batting_team_name']) ?><?php if (is_test_mode($match['mode'])): ?> <span class="muted">&mdash; innings <?= (int)$inn['innings_no'] ?></span><?php endif; ?></h2>
         <p class="score-big"><?= (int)$inn['runs'] ?>/<?= (int)$inn['wickets'] ?>
             <span class="overs">(<?= floor($inn['balls_bowled'] / 6) ?>.<?= $inn['balls_bowled'] % 6 ?> overs)</span>
+            <?php if ($inn['declared']): ?><span class="target">declared</span><?php endif; ?>
         </p>
         <?php if ($inn['target']): ?><p class="muted">Target: <?= (int)$inn['target'] ?></p><?php endif; ?>
         <?php $balls = get_balls_for_innings($pdo, (int)$inn['id']);

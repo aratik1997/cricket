@@ -67,7 +67,7 @@
                     .catch(() => window.location.reload());
             });
         });
-    } else if (mode === 'online') {
+    } else if (mode === 'online' || mode === 'test_online') {
         // Spectator: poll for state changes and reload when something happened.
         const poll = setInterval(function () {
             fetch('/cricket/api/match_state.php?match=' + matchId)
