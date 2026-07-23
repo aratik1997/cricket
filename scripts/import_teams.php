@@ -15,6 +15,7 @@ function import_teams(PDO $pdo): void {
     $insertTeam = $pdo->prepare('INSERT INTO teams (name, short_code, tier) VALUES (?, ?, ?)');
     $insertPlayer = $pdo->prepare('INSERT INTO players (team_id, name, batting_order) VALUES (?, ?, ?)');
     $findTeam = $pdo->prepare('SELECT id FROM teams WHERE name = ?');
+    $countPlayers = $pdo->prepare('SELECT COUNT(*) FROM players WHERE team_id = ?');
 
     foreach ($xml->team as $team) {
         $name = (string)$team->name;
@@ -22,12 +23,20 @@ function import_teams(PDO $pdo): void {
         $tier = (string)$team['tier'];
 
         $findTeam->execute([$name]);
-        if ($findTeam->fetchColumn()) {
-            continue; // already imported
+        $existingId = $findTeam->fetchColumn();
+        if ($existingId) {
+            $teamId = (int)$existingId;
+        } else {
+            $insertTeam->execute([$name, $shortCode, $tier]);
+            $teamId = (int)$pdo->lastInsertId();
         }
 
-        $insertTeam->execute([$name, $shortCode, $tier]);
-        $teamId = (int)$pdo->lastInsertId();
+        // Squads were added after teams were — backfill players for a team that already existed
+        // but never got its roster, same as a brand-new team.
+        $countPlayers->execute([$teamId]);
+        if ((int)$countPlayers->fetchColumn() > 0) {
+            continue; // already has its squad
+        }
 
         $order = 1;
         foreach ($team->players->player as $player) {

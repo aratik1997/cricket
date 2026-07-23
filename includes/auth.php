@@ -6,9 +6,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Bootstrap: import team/player data from XML on first run.
+// Bootstrap: import team/player data from XML on first run, and backfill squads for any database
+// whose teams table predates the players table (see the players-table migration in db.php).
 $teamCount = (int)$pdo->query('SELECT COUNT(*) FROM teams')->fetchColumn();
-if ($teamCount === 0) {
+$playerCount = (int)$pdo->query('SELECT COUNT(*) FROM players')->fetchColumn();
+if ($teamCount === 0 || $playerCount === 0) {
     import_teams($pdo);
 }
 

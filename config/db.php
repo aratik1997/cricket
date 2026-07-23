@@ -105,6 +105,20 @@ try {
         $pdo->exec("ALTER TABLE innings ADD COLUMN pending_six TINYINT(1) NOT NULL DEFAULT 0");
         $pdo->exec("ALTER TABLE innings ADD COLUMN pending_wicket TINYINT(1) NOT NULL DEFAULT 0");
     }
+
+    // The players table (squads, used for stats + next-batsman/bowler picking) was added after the
+    // initial schema. Databases whose 'teams' table already existed by then never got it, since the
+    // schema-bootstrap block above only runs when 'teams' is missing.
+    $hasPlayers = $pdo->query("SHOW TABLES LIKE 'players'")->fetchColumn();
+    if (!$hasPlayers) {
+        $pdo->exec("CREATE TABLE players (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            team_id INT NOT NULL,
+            name VARCHAR(60) NOT NULL,
+            batting_order TINYINT NOT NULL,
+            FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+    }
 } catch (PDOException $e) {
     die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
 }
