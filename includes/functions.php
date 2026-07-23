@@ -497,6 +497,72 @@ function innings_scorecard_html(array $card, bool $showHeader = true): string {
     return $html;
 }
 
+/**
+ * Renders the whole in-play screen (scoreboard + hit-zone/spectate + stats modal) for a match
+ * that's currently 'in_progress'. Shared by the initial page load in play.php and the
+ * api/match_fragment.php endpoint, so a ball played over AJAX re-renders the exact same markup
+ * without a full page reload.
+ */
+function render_play_screen(PDO $pdo, array $match, int $uid): string {
+    $matchId = (int)$match['id'];
+    $innings = get_current_innings($pdo, $matchId);
+    $inningsList = get_innings_list($pdo, $matchId);
+    $balls = $innings ? get_balls_for_innings($pdo, (int)$innings['id']) : [];
+
+    $scorecards = get_match_scorecard($pdo, $matchId);
+    $currentCard = null;
+    foreach ($scorecards as $card) {
+        if ($card['innings_id'] === (int)$innings['id']) {
+            $currentCard = $card;
+            break;
+        }
+    }
+    $strikerName = '';
+    $bowlerName = '';
+    if ($currentCard) {
+        foreach ($currentCard['batting'] as $b) {
+            if ($b['is_striker']) { $strikerName = $b['name']; break; }
+        }
+        foreach ($currentCard['bowling'] as $bw) {
+            if ($bw['is_current']) { $bowlerName = $bw['name']; break; }
+        }
+    }
+    $isTest = is_test_mode($match['mode']);
+    $isVsComputer = in_array($match['mode'], ['single', 'worldcup', 'test'], true);
+    $leadInfo = $isTest ? get_test_lead_info($pdo, $matchId, $innings) : null;
+
+    $primedLabels = [];
+    if ($isTest) {
+        if (!empty($innings['pending_four'])) { $primedLabels[] = '4'; }
+        if (!empty($innings['pending_five'])) { $primedLabels[] = '5'; }
+        if (!empty($innings['pending_six'])) { $primedLabels[] = '6'; }
+        if (!empty($innings['pending_wicket'])) { $primedLabels[] = 'Wicket'; }
+    }
+
+    $myTurn = can_play_ball($match, $innings, $uid);
+    $myName = current_username();
+    $waitingText = 'Waiting...';
+
+    if (in_array($match['mode'], ['local', 'test_local'], true)) {
+        $myName = ((int)$innings['batting_team_id'] === (int)$match['team1_id'])
+            ? $match['player1_name'] : $match['player2_name'];
+    } elseif (in_array($match['mode'], ['online', 'test_online'], true)) {
+        $waitingText = "Waiting for your opponent's shot...";
+    }
+
+    $currentOverBalls = [];
+    $curOver = intdiv((int)$innings['balls_bowled'], 6) + 1;
+    foreach ($balls as $b) {
+        if ((int)$b['over_no'] === $curOver) {
+            $currentOverBalls[] = $b;
+        }
+    }
+
+    ob_start();
+    require __DIR__ . '/play_screen.php';
+    return ob_get_clean();
+}
+
 /** Batting-team players available to be picked as the next batsman in (not out, not already at the crease). */
 function get_available_batsmen(PDO $pdo, array $innings): array {
     $stmt = $pdo->prepare('SELECT p.id, p.name FROM players p
