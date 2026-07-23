@@ -19,6 +19,12 @@ if (!$match || ($match['user1_id'] != $uid && $match['user2_id'] != $uid)) {
     exit;
 }
 
+// A human innings ending mid-session can hand the next innings straight to the computer — play
+// that out now instead of leaving the screen stuck waiting on a turn nobody will ever take.
+if ($match['status'] === 'in_progress') {
+    $match = auto_simulate_computer_turns($pdo, $match);
+}
+
 // The play screen only knows how to render the 'in_progress' state. Any other status (toss,
 // waiting, stumps, completed) is a bigger phase change — tell the client to navigate instead.
 if ($match['status'] !== 'in_progress' || (is_test_mode($match['mode']) && test_day_status($match) !== 'active')) {

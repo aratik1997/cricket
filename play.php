@@ -136,47 +136,17 @@ if ($match['status'] === 'toss') {
     exit;
 }
 
-// Test matches (any variant) run on a day clock, checked before anything else on every load.
-$testDayStatus = null;
-if (is_test_mode($match['mode'])) {
-    $testDayStatus = test_day_status($match);
-    if ($testDayStatus === 'time_up') {
-        finish_test_match($pdo, $matchId);
-        header('Location: /cricket/scorecard.php?match=' . $matchId);
-        exit;
-    }
+// Auto-play any consecutive computer turns (single/worldcup/test), including handling a Test
+// day's clock running out along the way. 'day_over' (any test variant) falls through — the render
+// below shows the "Stumps" gate instead of the HIT screen either way.
+$match = auto_simulate_computer_turns($pdo, $match);
+if ($match['status'] === 'completed') {
+    header('Location: /cricket/scorecard.php?match=' . $matchId);
+    exit;
 }
 
-// Auto-simulate the computer's innings instantly for single-player / world-cup / vs-computer test modes.
-if (in_array($match['mode'], ['single', 'worldcup'], true)) {
-    $innings = get_current_innings($pdo, $matchId);
-    if ($innings && !$innings['completed'] && (int)$innings['batting_team_id'] !== (int)$match['team1_id']) {
-        simulate_innings($pdo, (int)$innings['id']);
-        header('Location: /cricket/play.php?match=' . $matchId);
-        exit;
-    }
-    $match = get_match($pdo, $matchId);
-    if ($match['status'] === 'completed') {
-        header('Location: /cricket/scorecard.php?match=' . $matchId);
-        exit;
-    }
-} elseif ($match['mode'] === 'test' && $testDayStatus === 'active') {
-    $innings = get_current_innings($pdo, $matchId);
-    if ($innings && !$innings['completed'] && (int)$innings['batting_team_id'] !== (int)$match['team1_id']) {
-        simulate_test_innings($pdo, (int)$innings['id']);
-        header('Location: /cricket/play.php?match=' . $matchId);
-        exit;
-    }
-    $match = get_match($pdo, $matchId);
-    if ($match['status'] === 'completed') {
-        header('Location: /cricket/scorecard.php?match=' . $matchId);
-        exit;
-    }
-}
-// 'day_over' (any test variant): fall through — the render below shows the "Stumps" gate instead
-// of the HIT screen, regardless of whether the opponent is the computer or another human.
-
-if (is_test_mode($match['mode']) && $testDayStatus === 'day_over') {
+$testDayStatus = is_test_mode($match['mode']) ? test_day_status($match) : null;
+if ($testDayStatus === 'day_over') {
     $pageTitle = 'Stumps';
     require __DIR__ . '/includes/header.php';
     ?>

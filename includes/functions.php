@@ -563,6 +563,55 @@ function render_play_screen(PDO $pdo, array $match, int $uid): string {
     return ob_get_clean();
 }
 
+/**
+ * For vs-computer modes (single/worldcup/test), auto-plays the computer's innings the moment
+ * it's their turn to bat — looping through any number of consecutive computer turns (e.g. a Test
+ * match where the computer bats, then bowls, then bats again) — so control returns to the human
+ * batter, or the match/day ends, without them having to do anything. Used on every full page load
+ * of play.php AND from api/match_fragment.php so the same thing happens on an AJAX refresh (a
+ * human innings ending mid-session must not leave the screen stuck waiting on the computer).
+ * Returns the possibly-updated match row.
+ */
+function auto_simulate_computer_turns(PDO $pdo, array $match): array {
+    $matchId = (int)$match['id'];
+    for ($guard = 0; $guard < 10; $guard++) {
+        if ($match['status'] === 'completed') {
+            break;
+        }
+        if (is_test_mode($match['mode'])) {
+            $dayStatus = test_day_status($match);
+            if ($dayStatus === 'time_up') {
+                finish_test_match($pdo, $matchId);
+                $match = get_match($pdo, $matchId);
+                break;
+            }
+            if ($dayStatus !== 'active') {
+                break; // day_over — caller shows the Stumps gate instead
+            }
+        }
+
+        if (!in_array($match['mode'], ['single', 'worldcup', 'test'], true)) {
+            break; // not a vs-computer mode
+        }
+
+        $innings = get_current_innings($pdo, $matchId);
+        if (!$innings || $innings['completed']) {
+            break;
+        }
+        if ((int)$innings['batting_team_id'] === (int)$match['team1_id']) {
+            break; // human's turn to bat
+        }
+
+        if ($match['mode'] === 'test') {
+            simulate_test_innings($pdo, (int)$innings['id']);
+        } else {
+            simulate_innings($pdo, (int)$innings['id']);
+        }
+        $match = get_match($pdo, $matchId);
+    }
+    return $match;
+}
+
 /** Batting-team players available to be picked as the next batsman in (not out, not already at the crease). */
 function get_available_batsmen(PDO $pdo, array $innings): array {
     $stmt = $pdo->prepare('SELECT p.id, p.name FROM players p
