@@ -106,6 +106,14 @@ try {
         $pdo->exec("ALTER TABLE innings ADD COLUMN pending_wicket TINYINT(1) NOT NULL DEFAULT 0");
     }
 
+    // Bot opponents for online matches: bot_difficulty marks a computer-controlled team2 (user2_id
+    // stays NULL), and bot_next_action_at paces its moves so it doesn't play instantly.
+    $hasBotDifficulty = $pdo->query("SHOW COLUMNS FROM matches LIKE 'bot_difficulty'")->fetch();
+    if (!$hasBotDifficulty) {
+        $pdo->exec("ALTER TABLE matches ADD COLUMN bot_difficulty ENUM('easy','medium','hard') NULL");
+        $pdo->exec("ALTER TABLE matches ADD COLUMN bot_next_action_at DATETIME NULL");
+    }
+
     // The players table (squads, used for stats + next-batsman/bowler picking) was added after the
     // initial schema. Databases whose 'teams' table already existed by then never got it, since the
     // schema-bootstrap block above only runs when 'teams' is missing.

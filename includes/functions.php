@@ -102,8 +102,8 @@ function get_team_players(PDO $pdo, int $teamId): array {
 function create_match_row(PDO $pdo, array $opts): int {
     $stmt = $pdo->prepare('INSERT INTO matches
         (mode, status, team1_id, team2_id, user1_id, user2_id, player1_name, player2_name,
-         overs_limit, wickets_limit, join_code, worldcup_fixture_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+         overs_limit, wickets_limit, join_code, worldcup_fixture_id, bot_difficulty)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([
         $opts['mode'],
         $opts['status'] ?? 'waiting',
@@ -117,6 +117,7 @@ function create_match_row(PDO $pdo, array $opts): int {
         $opts['wickets_limit'],
         $opts['join_code'] ?? null,
         $opts['worldcup_fixture_id'] ?? null,
+        $opts['bot_difficulty'] ?? null,
     ]);
     return (int)$pdo->lastInsertId();
 }
@@ -855,6 +856,127 @@ function autoplay_balls(PDO $pdo, int $matchId, int $maxBalls, int $uid, bool $a
     }
 
     return ['played' => $played, 'last' => $lastResult];
+}
+
+/**
+ * Bot difficulty: weight of each stopwatch units digit (0 = wicket, 1-6 = runs, 7-9 = dot). The
+ * digit alone decides the ball, so picking a digit is the bot's shot. Easy gets out more and scores
+ * less; hard plays for runs and rarely gets out.
+ */
+const BOT_DIGIT_WEIGHTS = [
+    'easy'   => [0 => 12, 1 => 10, 2 => 8, 3 => 5, 4 => 3, 5 => 2, 6 => 2, 7 => 25, 8 => 17, 9 => 16],
+    'medium' => [0 => 5, 1 => 12, 2 => 12, 3 => 8, 4 => 8, 5 => 5, 6 => 6, 7 => 20, 8 => 12, 9 => 12],
+    'hard'   => [0 => 2, 1 => 16, 2 => 14, 3 => 8, 4 => 12, 5 => 6, 6 => 8, 7 => 12, 8 => 10, 9 => 12],
+];
+
+/** Seconds a bot waits before each action, so it reads as a person reacting rather than instant. */
+const BOT_BALL_DELAY = [
+    'easy'   => [3, 5],
+    'medium' => [2, 4],
+    'hard'   => [1, 3],
+];
+const BOT_TOSS_DELAY = [1, 2];
+
+/** Picks a stopwatch value (0-99) for the bot's next shot, weighted by its difficulty. */
+function bot_pick_stopwatch(string $difficulty): int {
+    $weights = BOT_DIGIT_WEIGHTS[$difficulty];
+    $roll = mt_rand(1, array_sum($weights));
+    foreach ($weights as $digit => $weight) {
+        $roll -= $weight;
+        if ($roll <= 0) {
+            return mt_rand(0, 9) * 10 + $digit; // tens digit is irrelevant; only the units decide
+        }
+    }
+    return 7; // unreachable: the weights always cover the roll
+}
+
+/**
+ * Which action the bot opponent owes right now, or null if it's the human's move. Bots only ever
+ * occupy team2 of an online match (user2_id is NULL), so this checks team2 throughout.
+ */
+function bot_pending_action(PDO $pdo, array $match): ?string {
+    $botTeamId = (int)$match['team2_id'];
+    if ($match['status'] === 'toss_call' && (int)$match['toss_caller_team_id'] === $botTeamId) {
+        return 'call';
+    }
+    if ($match['status'] === 'toss' && (int)$match['toss_winner_team_id'] === $botTeamId) {
+        return 'decide';
+    }
+    if ($match['status'] === 'in_progress') {
+        $innings = get_current_innings($pdo, (int)$match['id']);
+        if ($innings && !$innings['completed'] && (int)$innings['batting_team_id'] === $botTeamId) {
+            return 'ball';
+        }
+    }
+    return null;
+}
+
+/** Records the moment the bot's next action becomes due, with a random human-like gap. */
+function bot_schedule(PDO $pdo, array $match, string $action): void {
+    $range = $action === 'ball' ? BOT_BALL_DELAY[$match['bot_difficulty']] : BOT_TOSS_DELAY;
+    $delay = mt_rand($range[0], $range[1]);
+    $pdo->prepare("UPDATE matches SET bot_next_action_at = DATE_ADD(NOW(), INTERVAL {$delay} SECOND) WHERE id = ?")
+        ->execute([(int)$match['id']]);
+}
+
+/**
+ * Lets the bot opponent of an online match take its next action: call the toss, bat/bowl after
+ * winning it, or play its next ball while batting. Called from the polling endpoints, so the match
+ * row is locked for the whole step. That stops two overlapping polls from both playing one ball.
+ *
+ * Each action is paced by bot_next_action_at. The first poll that sees a pending action schedules
+ * it; a later poll after the delay performs it, then clears the schedule so the next action is
+ * scheduled afresh. Does nothing for human-vs-human matches.
+ */
+function advance_bot_turns(PDO $pdo, int $matchId): void {
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT m.*, (m.bot_next_action_at IS NULL OR m.bot_next_action_at <= NOW()) AS bot_due
+            FROM matches m WHERE m.id = ? FOR UPDATE');
+        $stmt->execute([$matchId]);
+        $match = $stmt->fetch();
+
+        if (!$match || $match['bot_difficulty'] === null || $match['user2_id'] !== null) {
+            $pdo->commit();
+            return;
+        }
+
+        $action = bot_pending_action($pdo, $match);
+        if ($action === null) {
+            // Nothing owed by the bot right now. Drop any stale schedule so the next pending
+            // action gets a fresh delay instead of firing straight away.
+            if ($match['bot_next_action_at'] !== null) {
+                $pdo->prepare('UPDATE matches SET bot_next_action_at = NULL WHERE id = ?')->execute([$matchId]);
+            }
+            $pdo->commit();
+            return;
+        }
+
+        if ($match['bot_next_action_at'] === null) {
+            bot_schedule($pdo, $match, $action);
+            $pdo->commit();
+            return;
+        }
+        if (!$match['bot_due']) {
+            $pdo->commit();
+            return;
+        }
+
+        if ($action === 'call') {
+            auto_make_toss_call($pdo, $matchId);
+        } elseif ($action === 'decide') {
+            auto_decide_toss($pdo, $matchId);
+        } else {
+            $innings = get_current_innings($pdo, $matchId);
+            record_ball($pdo, (int)$innings['id'], bot_pick_stopwatch($match['bot_difficulty']));
+        }
+
+        $pdo->prepare('UPDATE matches SET bot_next_action_at = NULL WHERE id = ?')->execute([$matchId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
 }
 
 function finish_match(PDO $pdo, int $matchId): void {

@@ -19,6 +19,9 @@ if (!$match || ($match['user1_id'] != $uid && $match['user2_id'] != $uid)) {
     exit;
 }
 
+// Polled every second or two, so it's also where a bot opponent gets to take its turn.
+advance_bot_turns($pdo, $matchId);
+$match = get_match($pdo, $matchId);
 $innings = get_current_innings($pdo, $matchId);
 
 echo json_encode([

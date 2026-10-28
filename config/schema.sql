@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS matches (
     test_days_limit TINYINT NOT NULL DEFAULT 5,
     test_day_minutes SMALLINT NOT NULL DEFAULT 20,
     test_day_started_at DATETIME NULL,
+    bot_difficulty ENUM('easy','medium','hard') NULL,
+    bot_next_action_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (team1_id) REFERENCES teams(id),

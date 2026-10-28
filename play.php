@@ -12,6 +12,9 @@ if (!$match || ($match['user1_id'] != $uid && $match['user2_id'] != $uid)) {
     die('Match not found.');
 }
 
+advance_bot_turns($pdo, $matchId);
+$match = get_match($pdo, $matchId);
+
 if ($match['status'] === 'completed') {
     header('Location: /cricket/scorecard.php?match=' . $matchId);
     exit;
